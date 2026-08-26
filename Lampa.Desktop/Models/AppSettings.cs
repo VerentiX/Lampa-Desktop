@@ -34,6 +34,11 @@ public sealed class AppSettings
     public List<ProxyProfile> Profiles { get; set; } = [];
     public int SelectedProfile { get; set; }
     public bool UseFullBlockList { get; set; } = true;
+    /// <summary>
+    /// true = всё в прокси кроме geoip:ru / сайтов только из РФ;
+    /// false = в прокси только ru-blocked-all (старый split).
+    /// </summary>
+    public bool RouteExceptRussia { get; set; } = true;
     public int AppUpdateDays { get; set; } = 7;
     public DateTimeOffset? LastAppUpdateCheck { get; set; }
     public string PendingUpdateVersion { get; set; } = "";
@@ -50,10 +55,14 @@ public sealed class AppSettings
     {
         try
         {
-            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath)) ?? new();
+            var text = File.ReadAllText(SettingsPath);
+            var settings = JsonSerializer.Deserialize<AppSettings>(text) ?? new();
             if (settings.SubscriptionUpdateHours is < 6 or > 72) settings.SubscriptionUpdateHours = 24;
             if (settings.GeoUpdateDays is < 1 or > 7) settings.GeoUpdateDays = 3;
             if (settings.AppUpdateDays is < 3 or > 30) settings.AppUpdateDays = 7;
+            // Старые settings без ключа → новый режим по умолчанию.
+            if (!text.Contains("\"RouteExceptRussia\"", StringComparison.Ordinal))
+                settings.RouteExceptRussia = true;
             return settings;
         }
         catch { return new(); }

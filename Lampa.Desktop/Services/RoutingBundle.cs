@@ -10,14 +10,17 @@ public static class RoutingBundle
     {
         var directory = Path.Combine(AppContext.BaseDirectory, "routing");
         var defaultProfile = ReadJson(Path.Combine(directory, "default.json"));
+        var exceptRuProfile = ReadJson(Path.Combine(directory, "except-ru.json"));
         var whitelistProfile = ReadJson(Path.Combine(directory, "whitelist.json"));
         if (defaultProfile is null || whitelistProfile is null)
             throw new InvalidOperationException("Не найдены встроенные профили маршрутизации. Переустановите Lampa VPN.");
+        exceptRuProfile ??= defaultProfile.DeepClone()!.AsObject();
         return new JsonObject
         {
             ["whitelistMinPriority"] = 5,
             ["default"] = defaultProfile,
-            ["full"] = defaultProfile.DeepClone(),
+            ["exceptRu"] = exceptRuProfile,
+            ["full"] = exceptRuProfile.DeepClone(),
             ["whitelist"] = whitelistProfile
         }.ToJsonString();
     }
@@ -37,6 +40,7 @@ public static class RoutingBundle
             var stored = JsonNode.Parse(storedRouting!)!.AsObject();
             var fresh = JsonNode.Parse(Bundled())!.AsObject();
             if (fresh["default"] is JsonObject d) stored["default"] = d.DeepClone();
+            if (fresh["exceptRu"] is JsonObject e) stored["exceptRu"] = e.DeepClone();
             if (fresh["whitelist"] is JsonObject w) stored["whitelist"] = w.DeepClone();
             if (fresh["full"] is JsonObject f) stored["full"] = f.DeepClone();
             if (fresh["whitelistMinPriority"] is JsonNode p) stored["whitelistMinPriority"] = p.DeepClone();

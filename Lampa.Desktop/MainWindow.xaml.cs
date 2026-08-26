@@ -59,6 +59,7 @@ public partial class MainWindow : Window
         RenderBypassApps();
         RenderModeToggle();
         RenderRoutingMode();
+        RenderRoutePolicy();
         _draftProxyDomains = [.. _settings.CustomProxyDomains];
         _draftDirectDomains = [.. _settings.CustomDirectDomains];
         RefreshCustomRulesUI();
@@ -349,6 +350,7 @@ public partial class MainWindow : Window
         _settings.Save();
         StartupManager.SetEnabled(_settings.StartWithWindows);
         RenderModeToggle();
+        RenderRoutePolicy();
         StatusHint.Text = "Настройки сохранены";
     }
 
@@ -649,6 +651,29 @@ public partial class MainWindow : Window
     {
         FullRoutingBtn.Tag = _settings.UseFullBlockList ? "active" : null;
         FastRoutingBtn.Tag = _settings.UseFullBlockList ? null : "active";
+    }
+
+    private void RenderRoutePolicy()
+    {
+        ExceptRuRouteBtn.Tag = _settings.RouteExceptRussia ? "active" : null;
+        BlockedOnlyRouteBtn.Tag = _settings.RouteExceptRussia ? null : "active";
+        RoutePolicyHint.Text = _settings.RouteExceptRussia
+            ? "Иностранные сайты через VPN, российские IP и «только из РФ» — напрямую. Gmail, Claude, HubSpot обычно работают."
+            : "В VPN только списки РКН (ru-blocked). Остальное напрямую — могут рваться Gmail, Anthropic, виджеты на сайтах.";
+    }
+
+    private async void ExceptRuRoute_Click(object sender, RoutedEventArgs e) => await SetRouteExceptRussiaAsync(true);
+
+    private async void BlockedOnlyRoute_Click(object sender, RoutedEventArgs e) => await SetRouteExceptRussiaAsync(false);
+
+    private async Task SetRouteExceptRussiaAsync(bool exceptRussia)
+    {
+        if (_settings.RouteExceptRussia == exceptRussia) return;
+        _settings.RouteExceptRussia = exceptRussia;
+        _settings.Save();
+        RenderRoutePolicy();
+        StatusHint.Text = exceptRussia ? "Режим: всё кроме РФ" : "Режим: только блокировки";
+        if (_isConnected) await RestartTunnelAsync();
     }
 
     private void RoutingInfo_Click(object sender, RoutedEventArgs e) => RoutingInfoPopup.IsOpen = true;

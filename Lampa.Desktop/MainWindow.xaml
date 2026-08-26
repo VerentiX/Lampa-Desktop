@@ -974,6 +974,35 @@
 
           <Border Style="{StaticResource SettingsCard}">
             <StackPanel>
+              <TextBlock Text="Что пускать через VPN" Foreground="White" FontSize="15" FontWeight="SemiBold" />
+              <TextBlock Text="На приоритетных серверах (FULL). Whitelist на резервных серверах не меняется."
+                         Foreground="#99FFFFFF"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         Margin="0,6,0,12" />
+              <Border Background="#120A04" CornerRadius="16" Padding="3" HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal">
+                  <Button x:Name="ExceptRuRouteBtn"
+                          Style="{StaticResource ModeToggleButton}"
+                          Content="Всё кроме РФ"
+                          Click="ExceptRuRoute_Click" />
+                  <Button x:Name="BlockedOnlyRouteBtn"
+                          Style="{StaticResource ModeToggleButton}"
+                          Content="Только блокировки"
+                          Click="BlockedOnlyRoute_Click" />
+                </StackPanel>
+              </Border>
+              <TextBlock x:Name="RoutePolicyHint"
+                         Text="Иностранные сайты через VPN, российские IP — напрямую."
+                         Foreground="#66FFFFFF"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         Margin="0,10,0,0" />
+            </StackPanel>
+          </Border>
+
+          <Border Style="{StaticResource SettingsCard}">
+            <StackPanel>
               <TextBlock Text="Обновление подписки" Foreground="White" FontSize="15" FontWeight="SemiBold" />
               <TextBlock x:Name="SubscriptionIntervalLabel"
                          Text="Каждые 24 часа"

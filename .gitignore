@@ -4,6 +4,7 @@ obj/
 *.user
 *.suo
 dist/
+run/
 packaging/publish/
 *.log
 

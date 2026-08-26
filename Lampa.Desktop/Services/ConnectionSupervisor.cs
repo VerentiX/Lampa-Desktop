@@ -88,7 +88,8 @@ public sealed class ConnectionSupervisor : IDisposable
                 var routing = RoutingBundle.RefreshFromBundled(RoutingBundle.Resolve(_settings.ProfileRouting));
                 var configJson = await Task.Run(() => CoreConfigBuilder.Build(profile, _settings.LocalHttpPort,
                     _settings.UseTun, routing, _settings.BypassApplications, _settings.ActivePriority,
-                    _settings.CustomProxyDomains, _settings.CustomDirectDomains, _settings.UseFullBlockList)).ConfigureAwait(false);
+                    _settings.CustomProxyDomains, _settings.CustomDirectDomains, _settings.UseFullBlockList,
+                    _settings.RouteExceptRussia)).ConfigureAwait(false);
                 await File.WriteAllTextAsync(configPath, configJson).ConfigureAwait(false);
                 _readyConfigFingerprint = fingerprint;
             }
@@ -279,6 +280,7 @@ public sealed class ConnectionSupervisor : IDisposable
             _settings.LocalHttpPort,
             _settings.ActivePriority,
             _settings.UseFullBlockList,
+            _settings.RouteExceptRussia,
             string.Join(',', _settings.BypassApplications),
             string.Join(',', _settings.CustomProxyDomains),
             string.Join(',', _settings.CustomDirectDomains));

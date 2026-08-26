@@ -1,7 +1,7 @@
 {
-  "Name": "RoscomVPN",
-  "GlobalProxy": "false",
-  "RouteOrder": "block-proxy-direct",
+  "Name": "RoscomVPN Except RU",
+  "GlobalProxy": "true",
+  "RouteOrder": "block-direct-proxy",
   "RemoteDNSType": "DoH",
   "RemoteDNSDomain": "https://1.1.1.1/dns-query",
   "RemoteDNSIP": "1.1.1.1",
@@ -13,21 +13,15 @@
     "lknpd.nalog.ru": "213.24.64.181"
   },
   "DirectSites": [
-    "geosite:private"
+    "geosite:private",
+    "geosite:ru-available-only-inside"
   ],
   "DirectIp": [
-    "geoip:private"
+    "geoip:private",
+    "geoip:ru"
   ],
-  "ProxySites": [
-    "geosite:ru-blocked-all"
-  ],
-  "ProxyIp": [
-    "1.0.0.1",
-    "1.1.1.1",
-    "8.8.8.8",
-    "8.8.4.4",
-    "geoip:ru-blocked"
-  ],
+  "ProxySites": [],
+  "ProxyIp": [],
   "BlockSites": [
     "geosite:category-ads-all"
   ],

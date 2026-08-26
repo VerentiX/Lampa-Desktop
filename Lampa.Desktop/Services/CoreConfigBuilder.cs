@@ -26,10 +26,10 @@ public static class CoreConfigBuilder
     public static string Build(ProxyProfile profile, int httpPort, bool useTun = true,
         string profileRouting = "", IReadOnlyCollection<string>? bypassApplications = null, int activePriority = 0,
         IReadOnlyCollection<string>? customProxyDomains = null, IReadOnlyCollection<string>? customDirectDomains = null,
-        bool useFullBlockList = true)
+        bool useFullBlockList = true, bool routeExceptRussia = false)
     {
         if (!string.IsNullOrWhiteSpace(profile.ConfigJson))
-            return PrepareManagedConfig(profile.ConfigJson, httpPort, useTun, profileRouting, bypassApplications, activePriority, customProxyDomains, customDirectDomains, useFullBlockList);
+            return PrepareManagedConfig(profile.ConfigJson, httpPort, useTun, profileRouting, bypassApplications, activePriority, customProxyDomains, customDirectDomains, useFullBlockList, routeExceptRussia);
         var link = profile.Link;
         object outbound = link.StartsWith("vmess://", StringComparison.OrdinalIgnoreCase)
             ? BuildVmess(link) : BuildUriProfile(link);
@@ -49,7 +49,7 @@ public static class CoreConfigBuilder
     private static string PrepareManagedConfig(string json, int httpPort, bool useTun,
         string profileRouting, IReadOnlyCollection<string>? bypassApplications, int activePriority,
         IReadOnlyCollection<string>? customProxyDomains, IReadOnlyCollection<string>? customDirectDomains,
-        bool useFullBlockList)
+        bool useFullBlockList, bool routeExceptRussia)
     {
         var root = JsonNode.Parse(json)?.AsObject() ?? throw new InvalidOperationException("Повреждён автоконфиг подписки");
         if (root["log"] is JsonObject log) log["loglevel"] = "info";
@@ -67,10 +67,9 @@ public static class CoreConfigBuilder
         }
 
         var bundle = DecodeRoutingBundle(profileRouting);
-        var threshold = bundle?["whitelistMinPriority"]?.GetValue<int>() ?? 5;
-        var profile = bundle?[activePriority >= threshold ? "whitelist" : "default"] as JsonObject;
+        var profile = SelectRoutingProfile(bundle, activePriority, routeExceptRussia);
 
-        ApplyRouting(root, profileRouting, bypassApplications ?? [], activePriority, customProxyDomains, customDirectDomains, useFullBlockList);
+        ApplyRouting(root, profileRouting, bypassApplications ?? [], activePriority, customProxyDomains, customDirectDomains, useFullBlockList, routeExceptRussia);
         ApplyDesktopDns(root, profile);
         RewriteGeoCompatibility(root);
         RemoveFakeDnsSniffing(root);
@@ -111,7 +110,7 @@ public static class CoreConfigBuilder
     private static void ApplyRouting(JsonObject root, string encodedProfiles,
         IReadOnlyCollection<string> bypassApplications, int activePriority,
         IReadOnlyCollection<string>? customProxyDomains, IReadOnlyCollection<string>? customDirectDomains,
-        bool useFullBlockList)
+        bool useFullBlockList, bool routeExceptRussia)
     {
         var routing = root["routing"] as JsonObject;
         if (routing is null) return;
@@ -151,8 +150,7 @@ public static class CoreConfigBuilder
         });
 
         var bundle = DecodeRoutingBundle(encodedProfiles);
-        var threshold = bundle?["whitelistMinPriority"]?.GetValue<int>() ?? 5;
-        var profile = bundle?[activePriority >= threshold ? "whitelist" : "default"] as JsonObject;
+        var profile = SelectRoutingProfile(bundle, activePriority, routeExceptRussia);
         if (profile is not null)
         {
             routing["domainStrategy"] = "AsIs";
@@ -180,8 +178,43 @@ public static class CoreConfigBuilder
             }
             ApplyDnsHosts(root, profile);
         }
-        next.Add(new JsonObject { ["type"] = "field", ["network"] = "tcp,udp", ["outboundTag"] = "direct" });
+        // GlobalProxy=true → всё остальное в proxy (режим «всё кроме РФ»).
+        // Иначе catch-all direct (split по ru-blocked).
+        var globalProxy = profile is not null && IsTruthy(profile["GlobalProxy"] ?? profile["globalProxy"]);
+        next.Add(new JsonObject
+        {
+            ["type"] = "field",
+            ["network"] = "tcp,udp",
+            ["outboundTag"] = globalProxy ? "proxy" : "direct"
+        });
         routing["rules"] = next;
+    }
+
+    private static JsonObject? SelectRoutingProfile(JsonObject? bundle, int activePriority, bool routeExceptRussia)
+    {
+        if (bundle is null) return null;
+        var threshold = bundle["whitelistMinPriority"]?.GetValue<int>() ?? 5;
+        if (activePriority >= threshold)
+            return bundle["whitelist"] as JsonObject ?? bundle["default"] as JsonObject;
+        if (routeExceptRussia)
+            return bundle["exceptRu"] as JsonObject ?? bundle["full"] as JsonObject ?? bundle["default"] as JsonObject;
+        return bundle["default"] as JsonObject;
+    }
+
+    private static bool IsTruthy(JsonNode? node)
+    {
+        if (node is null) return false;
+        try
+        {
+            if (node is JsonValue value)
+            {
+                if (value.TryGetValue<bool>(out var b)) return b;
+                if (value.TryGetValue<string>(out var s))
+                    return s.Equals("true", StringComparison.OrdinalIgnoreCase) || s == "1";
+            }
+        }
+        catch { }
+        return false;
     }
 
     private static void ApplyDesktopDns(JsonObject root, JsonObject? profile)
