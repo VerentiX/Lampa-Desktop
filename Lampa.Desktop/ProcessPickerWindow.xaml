@@ -1,0 +1,142 @@
+<Window x:Class="Lampa.Desktop.ProcessPickerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Lampa Desktop"
+        Width="460"
+        Height="680"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Foreground="White">
+  <WindowChrome.WindowChrome>
+    <WindowChrome CaptionHeight="0"
+                  GlassFrameThickness="0"
+                  ResizeBorderThickness="6"
+                  CornerRadius="16"
+                  UseAeroCaptionButtons="False" />
+  </WindowChrome.WindowChrome>
+  <Border Background="#120A04" CornerRadius="16" BorderBrush="#33FFB300" BorderThickness="1" ClipToBounds="True">
+    <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="52" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <Border Grid.Row="0" Background="#16100B" BorderBrush="#18FFB300" BorderThickness="0,0,0,1" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+      <Grid Margin="12,8,12,8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="Раздельное туннелирование" Foreground="#FFF4E6" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <Button Grid.Column="1"
+                Content="—"
+                Click="Minimize_Click"
+                Width="44"
+                Height="32"
+                Background="Transparent"
+                Foreground="#D8F7F1E8"
+                BorderThickness="0" />
+        <Button Grid.Column="2"
+                Content="✕"
+                Click="Cancel_Click"
+                Width="44"
+                Height="32"
+                Margin="8,0,0,0"
+                Background="Transparent"
+                Foreground="#D8F7F1E8"
+                BorderThickness="0" />
+      </Grid>
+    </Border>
+
+    <DockPanel Grid.Row="1" Margin="20,20,20,12">
+      <Button DockPanel.Dock="Left"
+              Content="←"
+              Click="Cancel_Click"
+              Width="36"
+              Height="36"
+              Background="Transparent"
+              Foreground="White"
+              FontSize="20"
+              BorderThickness="0"
+              Margin="0,0,8,0" />
+      <TextBlock Text="Приложения в обход VPN" Foreground="White" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+      <Button DockPanel.Dock="Right"
+              Content="↻"
+              Click="Refresh_Click"
+              Width="36"
+              Height="36"
+              Background="Transparent"
+              Foreground="#FFB300"
+              BorderThickness="0"
+              FontSize="18" />
+    </DockPanel>
+
+    <Border Grid.Row="2" Background="#18120C" CornerRadius="16" Padding="14,12" Margin="20,0,20,12">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Left" Text="ⓘ" Foreground="#99FFFFFF" Margin="0,0,10,0" />
+        <TextBlock Text="Галочка — приложение напрямую, мимо VPN."
+                   Foreground="#99FFFFFF"
+                   FontSize="13"
+                   TextWrapping="Wrap" />
+      </DockPanel>
+    </Border>
+
+    <Border Grid.Row="3" Background="#18120C" CornerRadius="18" Padding="4" Margin="20,0">
+      <ListBox x:Name="ProcessesList"
+               Background="Transparent"
+               Foreground="White"
+               BorderThickness="0"
+               Padding="4"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <Grid Margin="8,6">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition />
+              </Grid.ColumnDefinitions>
+              <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                        Checked="ProcessCheck_Changed"
+                        Unchecked="ProcessCheck_Changed"
+                        VerticalAlignment="Top"
+                        Margin="0,3,12,0" />
+              <StackPanel Grid.Column="1">
+                <TextBlock Text="{Binding Name}" FontSize="15" />
+                <TextBlock Text="{Binding Path}"
+                           Foreground="#80FFFFFF"
+                           FontSize="11"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="340" />
+              </StackPanel>
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+
+    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,16,20,20">
+      <Button Content="Отмена"
+              Click="Cancel_Click"
+              Padding="18,10"
+              Background="Transparent"
+              BorderThickness="0"
+              Foreground="#99FFFFFF" />
+      <Button Content="Готово"
+              Click="Add_Click"
+              Padding="18,10"
+              Margin="10,0,0,0"
+              Background="#FFB300"
+              BorderThickness="0"
+              Foreground="#1A0F08"
+              FontWeight="SemiBold" />
+    </StackPanel>
+    </Grid>
+  </Border>
+</Window>

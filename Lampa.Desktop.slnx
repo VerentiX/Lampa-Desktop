@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Lampa.Desktop.SmokeTest/Lampa.Desktop.SmokeTest.csproj" />
+  <Project Path="Lampa.Desktop/Lampa.Desktop.csproj" />
+</Solution>

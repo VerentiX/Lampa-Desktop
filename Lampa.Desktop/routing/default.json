@@ -1,0 +1,38 @@
+{
+  "Name": "RoscomVPN",
+  "GlobalProxy": "true",
+  "RouteOrder": "block-proxy-direct",
+  "RemoteDNSType": "DoH",
+  "RemoteDNSDomain": "https://1.1.1.1/dns-query",
+  "RemoteDNSIP": "1.1.1.1",
+  "DomesticDNSType": "DoH",
+  "DomesticDNSDomain": "https://1.1.1.1/dns-query",
+  "DomesticDNSIP": "1.1.1.1",
+  "DnsHosts": {
+    "lkfl2.nalog.ru": "213.24.64.175",
+    "lknpd.nalog.ru": "213.24.64.181"
+  },
+  "DirectSites": [
+    "geosite:private"
+  ],
+  "DirectIp": [
+    "geoip:private"
+  ],
+  "ProxySites": [
+    "geosite:ru-blocked-all"
+  ],
+  "ProxyIp": [
+    "1.0.0.1",
+    "1.1.1.1",
+    "8.8.8.8",
+    "8.8.4.4",
+    "geoip:ru-blocked"
+  ],
+  "BlockSites": [
+    "geosite:category-ads-all"
+  ],
+  "BlockIp": [],
+  "DomainStrategy": "AsIs",
+  "FakeDNS": "false",
+  "UseChunkFiles": "true"
+}

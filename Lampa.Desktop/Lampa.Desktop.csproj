@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Lampa</AssemblyName>
+    <RootNamespace>Lampa.Desktop</RootNamespace>
+    <Version>1.0.3</Version>
+    <FileVersion>1.0.3.0</FileVersion>
+    <InformationalVersion>1.0.3</InformationalVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\hottabych.png" />
+    <Content Include="Assets\hottabych.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\logo.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="core\xray.exe" CopyToOutputDirectory="Always" Condition="Exists('core\xray.exe')" />
+    <Content Include="core\geoip.dat" CopyToOutputDirectory="Always" Condition="Exists('core\geoip.dat')" />
+    <Content Include="core\geosite.dat" CopyToOutputDirectory="Always" Condition="Exists('core\geosite.dat')" />
+    <Content Include="core\geosite-compat.dat" CopyToOutputDirectory="Always" />
+    <Content Include="core\geoip-compat.dat" CopyToOutputDirectory="Always" />
+    <Content Include="core\wintun.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('core\wintun.dll')" />
+    <Content Include="core\LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="core\LICENSE-wintun.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="routing\default.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="routing\whitelist.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
