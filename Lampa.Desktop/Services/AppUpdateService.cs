@@ -15,7 +15,7 @@ public enum AppUpdateUiState { Hidden, Downloading, Ready }
 public sealed record AppUpdateUi(AppUpdateUiState State, string Message, double Percent, bool CanInstall);
 
 /// <summary>
-/// Checks https://hattabych.ru/api/app/latest for a Windows installer, downloads
+/// Checks GitHub Releases (with the legacy site API as a fallback), downloads
 /// with HTTP Range resume, and keeps a thin UI state for the main window.
 /// Expected site payload (prepare this before shipping the installer):
 /// {
@@ -244,7 +244,9 @@ public sealed class AppUpdateService : IDisposable
                 using var response = await _checkHttp.SendAsync(request, token);
                 if (!response.IsSuccessStatusCode) continue;
                 var json = await response.Content.ReadAsStringAsync(token);
-                var release = ParseSiteRelease(json);
+                var release = api.Equals(AppEndpoints.GitHubLatestReleaseApi, StringComparison.OrdinalIgnoreCase)
+                    ? ParseGitHubRelease(json)
+                    : ParseSiteRelease(json);
                 if (release is not null) return release;
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -254,6 +256,36 @@ public sealed class AppUpdateService : IDisposable
             catch { /* next URL */ }
         }
         return null;
+    }
+
+    internal static WindowsRelease? ParseGitHubRelease(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object) return null;
+        if (root.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) return null;
+        if (root.TryGetProperty("prerelease", out var prerelease) && prerelease.ValueKind == JsonValueKind.True) return null;
+
+        var version = ReadString(root, "tag_name", "name").Trim().TrimStart('v', 'V');
+        if (version.Length == 0 || CompareVersions(version, CurrentVersion) <= 0) return null;
+        if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) return null;
+
+        WindowsAsset? selected = null;
+        foreach (var item in assets.EnumerateArray())
+        {
+            var asset = ReadAsset(item);
+            if (asset is null || !LooksLikeWindowsName(asset.Name)) continue;
+            if (asset.Name.Equals("LampaSetup.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                selected = asset;
+                break;
+            }
+            if (asset.Name.Contains("setup", StringComparison.OrdinalIgnoreCase)) selected ??= asset;
+        }
+
+        return selected is null
+            ? null
+            : new WindowsRelease(version, selected.Url, selected.Size, selected.Sha256);
     }
 
     internal static WindowsRelease? ParseSiteRelease(string json)
@@ -309,11 +341,13 @@ public sealed class AppUpdateService : IDisposable
     private static WindowsAsset? ReadAsset(JsonElement node)
     {
         var name = ReadString(node, "name");
-        var url = ReadString(node, "url", "browser_download_url", "downloadUrl");
+        // GitHub assets contain both an authenticated API URL (`url`) and the
+        // public installer URL (`browser_download_url`). Prefer the latter.
+        var url = ReadString(node, "browser_download_url", "url", "downloadUrl");
         if (url.Length == 0) return null;
         var size = 0L;
         if (node.TryGetProperty("size", out var sizeNode) && sizeNode.TryGetInt64(out var parsed)) size = parsed;
-        var sha = ReadString(node, "sha256", "sha", "hash");
+        var sha = ReadString(node, "digest", "sha256", "sha", "hash");
         var arch = ReadString(node, "arch");
         var platform = ReadString(node, "platform", "os");
         return new WindowsAsset(name, url, size, sha, arch, platform);
@@ -512,6 +546,7 @@ public sealed class AppUpdateService : IDisposable
         request.Headers.UserAgent.ParseAdd($"Lampa-Desktop/{CurrentVersion}");
         request.Headers.TryAddWithoutValidation("X-Lampa-Client", "desktop");
         request.Headers.TryAddWithoutValidation("X-Lampa-Platform", "windows");
+        request.Headers.TryAddWithoutValidation("X-GitHub-Api-Version", "2022-11-28");
     }
 
     private static string ReadString(JsonElement node, params string[] names)

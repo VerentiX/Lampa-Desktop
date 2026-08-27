@@ -27,6 +27,8 @@ public partial class MainWindow : Window
     private bool _isConnected;
     private bool _settingsUiReady;
     private bool _powerClickBusy;
+    private bool _updatePromptVisible;
+    private string _deferredUpdateVersion = "";
     private ConnectionState _renderedState = ConnectionState.Disconnected;
     private List<string> _draftProxyDomains = [];
     private List<string> _draftDirectDomains = [];
@@ -73,7 +75,11 @@ public partial class MainWindow : Window
         UpdateIntervalLabels();
         _settingsUiReady = true;
         _updateTimer.Start();
-        _appUpdates.ProgressChanged += ui => Dispatcher.BeginInvoke(() => RenderUpdateBanner(ui));
+        _appUpdates.ProgressChanged += ui => Dispatcher.BeginInvoke(async () =>
+        {
+            RenderUpdateBanner(ui);
+            await ShowUpdatePromptIfNeededAsync(ui);
+        });
         RenderUpdateBanner(_appUpdates.CurrentUi(_settings));
 
         _tray = new Forms.NotifyIcon { Text = "Lampa Desktop", Icon = AppIconFactory.CreateTrayIcon(AppIconFactory.StatusKind.Idle), Visible = true };
@@ -91,6 +97,7 @@ public partial class MainWindow : Window
             await Task.Delay(4000);
             await EnsureSubscriptionSchemaAsync();
             await RunBackgroundUpdatesAsync();
+            await ShowUpdatePromptIfNeededAsync(_appUpdates.CurrentUi(_settings));
         };
     }
 
@@ -787,6 +794,33 @@ public partial class MainWindow : Window
     }
 
     private async void InstallUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        await ShowUpdatePromptIfNeededAsync(_appUpdates.CurrentUi(_settings), force: true);
+    }
+
+    private async Task ShowUpdatePromptIfNeededAsync(AppUpdateUi ui, bool force = false)
+    {
+        if (ui.State != AppUpdateUiState.Ready || _updatePromptVisible) return;
+        var version = _settings.PendingUpdateVersion;
+        if (string.IsNullOrWhiteSpace(version)) return;
+        if (!force && string.Equals(_deferredUpdateVersion, version, StringComparison.OrdinalIgnoreCase)) return;
+
+        _updatePromptVisible = true;
+        try
+        {
+            var prompt = new UpdatePromptWindow(version) { Owner = this };
+            if (prompt.ShowDialog() == true)
+                await InstallReadyUpdateAsync();
+            else
+                _deferredUpdateVersion = version;
+        }
+        finally
+        {
+            _updatePromptVisible = false;
+        }
+    }
+
+    private async Task InstallReadyUpdateAsync()
     {
         var path = _appUpdates.ReadyInstallerPath(_settings);
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
