@@ -490,7 +490,7 @@
                    TextAlignment="Center"
                    Margin="0,8,0,18" />
 
-        <Border Style="{StaticResource GlassCard}" Padding="14,12" Margin="0,0,0,10">
+        <Border Style="{StaticResource GlassCard}" Padding="14,12" Margin="0,0,0,10" Visibility="Collapsed">
           <DockPanel LastChildFill="True">
             <Border DockPanel.Dock="Right" Background="#120A04" CornerRadius="16" Padding="3" Margin="10,0,0,0">
               <StackPanel Orientation="Horizontal">
@@ -524,13 +524,13 @@
                   Width="320">
             <StackPanel>
               <TextBlock Text="Полная" Foreground="#FFB300" FontWeight="SemiBold" FontSize="14" />
-              <TextBlock Text="Все известные заблокированные сайты. Реже нужны ручные правила, но VPN дольше включается и занимает больше памяти."
+              <TextBlock Text="P0–P4: блокировки и сайты с ограничением для РФ через VPN, остальное напрямую. P5+: белые списки."
                          Foreground="#CCFFF4E6"
                          FontSize="12"
                          TextWrapping="Wrap"
                          Margin="0,4,0,12" />
               <TextBlock Text="Быстрая" Foreground="#FFB300" FontWeight="SemiBold" FontSize="14" />
-              <TextBlock Text="Основной проверенный список. Старт быстрее и легче. Если сайт не открылся — добавьте его в «Мои правила»."
+              <TextBlock Text="Прежняя схема RoscomVPN: российские ресурсы напрямую, остальной интернет согласно выбранной политике."
                          Foreground="#CCFFF4E6"
                          FontSize="12"
                          TextWrapping="Wrap" />
@@ -972,7 +972,7 @@
             </StackPanel>
           </Border>
 
-          <Border Style="{StaticResource SettingsCard}">
+          <Border Style="{StaticResource SettingsCard}" Visibility="Collapsed">
             <StackPanel>
               <TextBlock Text="Что пускать через VPN" Foreground="White" FontSize="15" FontWeight="SemiBold" />
               <TextBlock Text="На приоритетных серверах (FULL). Whitelist на резервных серверах не меняется."
@@ -1025,8 +1025,8 @@
 
           <Border Style="{StaticResource SettingsCard}">
             <StackPanel>
-              <TextBlock Text="Базы маршрутизации" Foreground="White" FontSize="15" FontWeight="SemiBold" />
-              <TextBlock Text="geosite.dat и geoip.dat — списки заблокированных сайтов и сетей из runetfreedom."
+              <TextBlock Text="Обновление списков маршрутизации" Foreground="White" FontSize="15" FontWeight="SemiBold" />
+              <TextBlock Text="Удалённые списки обновляются и кешируются самим ядром без перезапуска VPN."
                          Foreground="#99FFFFFF"
                          FontSize="12"
                          TextWrapping="Wrap"
