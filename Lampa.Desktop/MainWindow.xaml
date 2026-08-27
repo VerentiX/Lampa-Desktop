@@ -8,6 +8,8 @@
         MinHeight="720"
         WindowStartupLocation="CenterScreen"
         Background="Transparent"
+        FontFamily="Consolas"
+        TextOptions.TextFormattingMode="Display"
         WindowStyle="None"
         ResizeMode="CanResize"
         AllowsTransparency="True"
@@ -21,33 +23,34 @@
   </WindowChrome.WindowChrome>
   <Window.Resources>
     <LinearGradientBrush x:Key="CosmicBackground" StartPoint="0,0" EndPoint="1,1">
-      <GradientStop Color="#120A04" Offset="0" />
-      <GradientStop Color="#1E1208" Offset="0.55" />
-      <GradientStop Color="#0A0603" Offset="1" />
+      <GradientStop Color="#03080E" Offset="0" />
+      <GradientStop Color="#07111D" Offset="0.52" />
+      <GradientStop Color="#020509" Offset="1" />
     </LinearGradientBrush>
 
     <Style x:Key="GlassCard" TargetType="Border">
-      <Setter Property="Background" Value="#1A18110B" />
-      <Setter Property="BorderBrush" Value="#28FFB300" />
+      <Setter Property="Background" Value="#D90B1422" />
+      <Setter Property="BorderBrush" Value="#804477A7" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="22" />
+      <Setter Property="CornerRadius" Value="2" />
     </Style>
 
     <Style x:Key="MenuRowButton" TargetType="Button">
-      <Setter Property="Background" Value="#1AFFFFFF" />
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Background" Value="#D90B1422" />
+      <Setter Property="Foreground" Value="#A9D9FF" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Padding" Value="14,0" />
       <Setter Property="Height" Value="56" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
-            <Border x:Name="Root" Background="{TemplateBinding Background}" CornerRadius="18" Padding="{TemplateBinding Padding}">
+            <Border x:Name="Root" Background="{TemplateBinding Background}" BorderBrush="#804477A7" BorderThickness="1" CornerRadius="1" Padding="{TemplateBinding Padding}">
               <ContentPresenter VerticalAlignment="Center" />
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Root" Property="Background" Value="#24FFFFFF" />
+                <Setter TargetName="Root" Property="Background" Value="#E012253A" />
+                <Setter TargetName="Root" Property="BorderBrush" Value="#FF58B8FF" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -76,8 +79,8 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="Tag" Value="active">
-                <Setter TargetName="Root" Property="Background" Value="#33FFB300" />
-                <Setter Property="Foreground" Value="#FFB300" />
+                <Setter TargetName="Root" Property="Background" Value="#262DF578" />
+                <Setter Property="Foreground" Value="#42F58A" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -89,7 +92,7 @@
       <Setter Property="Width" Value="40" />
       <Setter Property="Height" Value="40" />
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#FFD180" />
+      <Setter Property="Foreground" Value="#FF9D1C" />
       <Setter Property="FontSize" Value="20" />
       <Setter Property="Template">
         <Setter.Value>
@@ -101,7 +104,7 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Root" Property="Background" Value="#1AFFB300" />
+                <Setter TargetName="Root" Property="Background" Value="#263E91D0" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -113,7 +116,7 @@
       <Setter Property="Width" Value="44" />
       <Setter Property="Height" Value="32" />
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#D8F7F1E8" />
+      <Setter Property="Foreground" Value="#9CCEF5" />
       <Setter Property="FontSize" Value="14" />
       <Setter Property="Template">
         <Setter.Value>
@@ -134,8 +137,8 @@
     <Style x:Key="PlusImportButton" TargetType="Button">
       <Setter Property="Height" Value="36" />
       <Setter Property="Padding" Value="12,0,14,0" />
-      <Setter Property="Background" Value="#FFB300" />
-      <Setter Property="Foreground" Value="#1A0F08" />
+      <Setter Property="Background" Value="#1A1010" />
+      <Setter Property="Foreground" Value="#FF9D1C" />
       <Setter Property="FontSize" Value="13" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Cursor" Value="Hand" />
@@ -144,7 +147,9 @@
           <ControlTemplate TargetType="Button">
             <Border x:Name="Root"
                     Background="{TemplateBinding Background}"
-                    CornerRadius="18"
+                    BorderBrush="#FF9D1C"
+                    BorderThickness="1"
+                    CornerRadius="1"
                     Padding="{TemplateBinding Padding}">
               <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <Path Width="11"
@@ -163,10 +168,10 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Root" Property="Background" Value="#FFC433" />
+                <Setter TargetName="Root" Property="Background" Value="#332414" />
               </Trigger>
               <Trigger Property="IsPressed" Value="True">
-                <Setter TargetName="Root" Property="Background" Value="#E0A000" />
+                <Setter TargetName="Root" Property="Background" Value="#4A2C0B" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -189,7 +194,7 @@
                   <RepeatButton Command="Slider.DecreaseLarge" IsTabStop="False">
                     <RepeatButton.Template>
                       <ControlTemplate TargetType="RepeatButton">
-                        <Border Height="4" Background="#FFB300" CornerRadius="2" Margin="8,0,0,0" />
+                        <Border Height="4" Background="#FF9D1C" CornerRadius="0" Margin="8,0,0,0" />
                       </ControlTemplate>
                     </RepeatButton.Template>
                   </RepeatButton>
@@ -198,7 +203,7 @@
                   <Thumb Width="18" Height="18">
                     <Thumb.Template>
                       <ControlTemplate TargetType="Thumb">
-                        <Ellipse Fill="#FFB300" />
+                        <Ellipse Fill="#FF9D1C" />
                       </ControlTemplate>
                     </Thumb.Template>
                   </Thumb>
@@ -220,35 +225,35 @@
     </Style>
 
     <Style x:Key="SettingsCard" TargetType="Border">
-      <Setter Property="Background" Value="#1A18110B" />
-      <Setter Property="BorderBrush" Value="#28FFB300" />
+      <Setter Property="Background" Value="#E00B1422" />
+      <Setter Property="BorderBrush" Value="#804477A7" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="CornerRadius" Value="2" />
       <Setter Property="Padding" Value="16" />
       <Setter Property="Margin" Value="0,0,0,10" />
     </Style>
 
     <Style TargetType="TextBox">
-      <Setter Property="Background" Value="#221A1208" />
-      <Setter Property="Foreground" Value="White" />
-      <Setter Property="BorderBrush" Value="#44FFB300" />
+      <Setter Property="Background" Value="#E0060D16" />
+      <Setter Property="Foreground" Value="#CBE8FF" />
+      <Setter Property="BorderBrush" Value="#8058B8FF" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="Padding" Value="12,0" />
       <Setter Property="Height" Value="40" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
-      <Setter Property="CaretBrush" Value="#FFB300" />
+      <Setter Property="CaretBrush" Value="#42F58A" />
     </Style>
     <Style x:Key="RuleAddButton" TargetType="Button">
       <Setter Property="Width" Value="40" />
       <Setter Property="Height" Value="40" />
-      <Setter Property="Background" Value="#FFB300" />
-      <Setter Property="Foreground" Value="#1A0F08" />
+      <Setter Property="Background" Value="#14281E" />
+      <Setter Property="Foreground" Value="#42F58A" />
       <Setter Property="FontSize" Value="22" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
-            <Border Background="{TemplateBinding Background}" CornerRadius="12">
+            <Border Background="{TemplateBinding Background}" BorderBrush="#42F58A" BorderThickness="1" CornerRadius="1">
               <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
           </ControlTemplate>
@@ -261,8 +266,8 @@
       <Setter Property="FontSize" Value="12" />
       <Setter Property="FontWeight" Value="SemiBold" />
       <Setter Property="FontStyle" Value="Italic" />
-      <Setter Property="Foreground" Value="#FFD180" />
-      <Setter Property="Background" Value="#22FFB300" />
+      <Setter Property="Foreground" Value="#58B8FF" />
+      <Setter Property="Background" Value="#223E91D0" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
@@ -280,8 +285,8 @@
     </Style>
     <Style x:Key="GoldProgress" TargetType="ProgressBar">
       <Setter Property="Height" Value="3" />
-      <Setter Property="Foreground" Value="#FFB300" />
-      <Setter Property="Background" Value="#22FFB300" />
+      <Setter Property="Foreground" Value="#42F58A" />
+      <Setter Property="Background" Value="#223E91D0" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Template">
         <Setter.Value>
@@ -320,8 +325,8 @@
   </Window.Resources>
 
   <Border Background="{StaticResource CosmicBackground}"
-          CornerRadius="16"
-          BorderBrush="#33FFB300"
+          CornerRadius="2"
+          BorderBrush="#8058B8FF"
           BorderThickness="1"
           ClipToBounds="True">
   <Grid>
@@ -331,7 +336,7 @@
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
-    <Border Grid.Row="0" Background="#16100B" BorderBrush="#18FFB300" BorderThickness="0,0,0,1" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+    <Border Grid.Row="0" Background="#F0040A11" BorderBrush="#604477A7" BorderThickness="0,0,0,1" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
       <Grid Margin="12,8,12,8">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
@@ -342,7 +347,7 @@
         </Grid.ColumnDefinitions>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
           <Image Source="pack://application:,,,/Assets/hottabych.png" Width="22" Height="22" Stretch="Uniform" />
-          <TextBlock Text="Lampa Desktop" Foreground="#FFF4E6" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
+          <TextBlock Text="::{ХОТТ@БЫ}Ч // DESKTOP::" Foreground="#42F58A" FontSize="14" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
         </StackPanel>
         <Button Grid.Column="1"
                 Style="{StaticResource TitleBarButton}"
@@ -402,10 +407,10 @@
     <!-- Home -->
     <ScrollViewer Grid.Row="2" x:Name="HomePage" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled" Padding="24,20,24,24">
       <StackPanel MaxWidth="400">
-        <TextBlock Text="Время подключения" Foreground="#80FFFFFF" FontSize="13" HorizontalAlignment="Center" />
+        <TextBlock Text=":: ВРЕМЯ СЕАНСА ::" Foreground="#668EB5D2" FontSize="12" HorizontalAlignment="Center" />
         <TextBlock x:Name="ConnectionTimerText"
                    Text="00:00:00"
-                   Foreground="White"
+                   Foreground="#CBE8FF"
                    FontSize="40"
                    FontWeight="Light"
                    HorizontalAlignment="Center"
@@ -416,10 +421,10 @@
                 Height="148"
                 HorizontalAlignment="Center"
                 Click="PowerButton_Click"
-                Background="#16100B"
-                BorderBrush="#C8FFB300"
+                Background="#E0091320"
+                BorderBrush="#B058B8FF"
                 BorderThickness="3"
-                Foreground="#FFB300"
+                Foreground="#42F58A"
                 Margin="0,0,0,12"
                 Cursor="Hand"
                 ToolTip="Подключить"
@@ -433,7 +438,7 @@
                 <Ellipse x:Name="PowerGlow"
                          Width="168"
                          Height="168"
-                         Fill="#55FFB300"
+                         Fill="#4058B8FF"
                          Opacity="0"
                          HorizontalAlignment="Center"
                          VerticalAlignment="Center" />
@@ -476,15 +481,17 @@
         </Button>
 
         <Border HorizontalAlignment="Center"
-                Background="#1AFFFFFF"
-                CornerRadius="16"
+                Background="#40101C2A"
+                BorderBrush="#604477A7"
+                BorderThickness="1"
+                CornerRadius="1"
                 Padding="16,6"
                 Margin="0,0,0,6">
-          <TextBlock x:Name="StatusBadgeText" Text="Не подключено" Foreground="#99FFFFFF" FontSize="13" />
+          <TextBlock x:Name="StatusBadgeText" Text="НЕ В СЕТИ" Foreground="#8EB5D2" FontSize="12" />
         </Border>
         <TextBlock x:Name="SelectedProfileText"
                    Text="Конфигурация не выбрана"
-                   Foreground="White"
+                   Foreground="#CBE8FF"
                    FontSize="16"
                    FontWeight="SemiBold"
                    TextAlignment="Center"
@@ -492,7 +499,7 @@
 
         <Border Style="{StaticResource GlassCard}" Padding="14,12" Margin="0,0,0,10" Visibility="Collapsed">
           <DockPanel LastChildFill="True">
-            <Border DockPanel.Dock="Right" Background="#120A04" CornerRadius="16" Padding="3" Margin="10,0,0,0">
+            <Border DockPanel.Dock="Right" Background="#B0060D16" BorderBrush="#604477A7" BorderThickness="1" CornerRadius="1" Padding="3" Margin="10,0,0,0">
               <StackPanel Orientation="Horizontal">
                 <Button x:Name="FullRoutingBtn" Style="{StaticResource ModeToggleButton}" Content="Полная" Click="FullRouting_Click" />
                 <Button x:Name="FastRoutingBtn" Style="{StaticResource ModeToggleButton}" Content="Быстрая" Click="FastRouting_Click" />
@@ -516,10 +523,10 @@
                AllowsTransparency="True"
                HorizontalOffset="-8"
                VerticalOffset="8">
-          <Border Background="#1E1610"
-                  CornerRadius="16"
+          <Border Background="#F0060D16"
+                  CornerRadius="2"
                   Padding="16"
-                  BorderBrush="#55FFB300"
+                  BorderBrush="#8058B8FF"
                   BorderThickness="1"
                   Width="320">
             <StackPanel>
@@ -540,13 +547,13 @@
 
         <Border Style="{StaticResource GlassCard}" Padding="14,12" Margin="0,0,0,10">
           <DockPanel LastChildFill="True">
-            <Border DockPanel.Dock="Right" Background="#120A04" CornerRadius="16" Padding="3" Margin="10,0,0,0">
+            <Border DockPanel.Dock="Right" Background="#B0060D16" CornerRadius="1" Padding="3" Margin="10,0,0,0">
               <StackPanel Orientation="Horizontal">
                 <Button x:Name="ProxyModeBtn" Style="{StaticResource ModeToggleButton}" Content="Прокси" Click="ProxyMode_Click" />
                 <Button x:Name="TunModeBtn" Style="{StaticResource ModeToggleButton}" Tag="active" Content="Туннель" Click="TunMode_Click" />
               </StackPanel>
             </Border>
-            <TextBlock Text="Режим" Foreground="White" FontSize="14" VerticalAlignment="Center" />
+            <TextBlock Text=">> РЕЖИМ СЕТИ" Foreground="#9CCEF5" FontSize="13" VerticalAlignment="Center" />
           </DockPanel>
         </Border>
 
@@ -557,14 +564,14 @@
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <Border Width="36" Height="36" CornerRadius="18" Background="#22FFB300" Margin="0,0,12,0">
-              <TextBlock Text="◫" Foreground="#FFD180" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <Border Width="36" Height="36" CornerRadius="1" Background="#202DF578" BorderBrush="#42F58A" BorderThickness="1" Margin="0,0,12,0">
+              <TextBlock Text="↯" Foreground="#42F58A" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-              <TextBlock Text="Раздельное туннелирование" FontSize="15" />
+              <TextBlock Text=">> РАЗД. ТУННЕЛЬ" Foreground="#58B8FF" TextDecorations="Underline" FontSize="14" />
               <TextBlock x:Name="BypassSummaryText" Text="Все приложения через VPN" Foreground="#99FFFFFF" FontSize="12" Margin="0,2,0,0" />
             </StackPanel>
-            <TextBlock Grid.Column="2" Text="›" Foreground="#66FFD180" FontSize="20" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Text="»" Foreground="#FF9D1C" FontSize="20" VerticalAlignment="Center" />
           </Grid>
         </Button>
 
@@ -575,15 +582,15 @@
               <ColumnDefinition Width="*" />
               <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <Border Width="36" Height="36" CornerRadius="18" Background="#22FFB300" Margin="0,0,12,0">
-              <TextBlock Text="✎" Foreground="#FFD180" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <Border Width="36" Height="36" CornerRadius="1" Background="#202DF578" BorderBrush="#42F58A" BorderThickness="1" Margin="0,0,12,0">
+              <TextBlock Text="≋" Foreground="#42F58A" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
-            <TextBlock Grid.Column="1" Text="Мои правила" FontSize="15" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="2" Text="›" Foreground="#66FFD180" FontSize="20" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text=">> МОИ ПРАВИЛА" Foreground="#58B8FF" TextDecorations="Underline" FontSize="14" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Text="»" Foreground="#FF9D1C" FontSize="20" VerticalAlignment="Center" />
           </Grid>
         </Button>
 
-        <TextBlock Text="Подписка" Foreground="White" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" />
+        <TextBlock Text=":: ПОДПИСКА ::" Foreground="#FF9D1C" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,8" />
 
         <Border x:Name="SubscriptionCard" Style="{StaticResource GlassCard}" Padding="16">
           <StackPanel>
@@ -619,10 +626,10 @@
                          AllowsTransparency="True"
                          HorizontalOffset="-210"
                          VerticalOffset="8">
-                    <Border Background="#1E1610"
-                            CornerRadius="18"
+                    <Border Background="#F0060D16"
+                            CornerRadius="2"
                             Padding="10"
-                            BorderBrush="#55FFB300"
+                            BorderBrush="#8058B8FF"
                             BorderThickness="1"
                             Width="260">
                       <StackPanel>
@@ -630,15 +637,15 @@
                                 Click="ImportFromClipboard_Click"
                                 HorizontalContentAlignment="Left"
                                 Padding="14,12"
-                                Background="#221A1208"
-                                Foreground="#FFF4E6"
+                                Background="#E00B1422"
+                                Foreground="#CBE8FF"
                                 Margin="0,0,0,6" />
                         <Button Content="Ввести ссылку вручную"
                                 Click="ShowManualImport_Click"
                                 HorizontalContentAlignment="Left"
                                 Padding="14,12"
-                                Background="#221A1208"
-                                Foreground="#FFF4E6" />
+                                Background="#E00B1422"
+                                Foreground="#CBE8FF" />
                         <StackPanel x:Name="ManualImportPanel" Visibility="Collapsed" Margin="0,8,0,0">
                           <TextBox x:Name="HomeSubscriptionUrlBox" Height="40" Margin="0,0,0,8" />
                           <Button Content="Сохранить ссылку"
