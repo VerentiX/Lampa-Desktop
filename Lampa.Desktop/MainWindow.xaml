@@ -311,16 +311,29 @@
     <Storyboard x:Key="PowerPulseStoryboard" RepeatBehavior="Forever">
       <DoubleAnimation Storyboard.TargetName="PowerScale"
                        Storyboard.TargetProperty="ScaleX"
-                       From="1" To="1.07" Duration="0:0:0.6"
+                       From="1" To="1.035" Duration="0:0:0.75"
                        AutoReverse="True" />
       <DoubleAnimation Storyboard.TargetName="PowerScale"
                        Storyboard.TargetProperty="ScaleY"
-                       From="1" To="1.07" Duration="0:0:0.6"
+                       From="1" To="1.035" Duration="0:0:0.75"
                        AutoReverse="True" />
       <DoubleAnimation Storyboard.TargetName="PowerButton"
                        Storyboard.TargetProperty="Opacity"
-                       From="1" To="0.72" Duration="0:0:0.6"
+                       From="1" To="0.78" Duration="0:0:0.75"
                        AutoReverse="True" />
+    </Storyboard>
+    <Storyboard x:Key="PowerConnectedStoryboard">
+      <DoubleAnimation Storyboard.TargetName="PowerScale"
+                       Storyboard.TargetProperty="ScaleX"
+                       From="0.94" To="1.08" Duration="0:0:0.28"
+                       AutoReverse="True" />
+      <DoubleAnimation Storyboard.TargetName="PowerScale"
+                       Storyboard.TargetProperty="ScaleY"
+                       From="0.94" To="1.08" Duration="0:0:0.28"
+                       AutoReverse="True" />
+      <DoubleAnimation Storyboard.TargetName="PowerButton"
+                       Storyboard.TargetProperty="Opacity"
+                       From="0.62" To="1" Duration="0:0:0.28" />
     </Storyboard>
   </Window.Resources>
 
@@ -346,7 +359,7 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-          <Image Source="pack://application:,,,/Assets/hottabych.png" Width="22" Height="22" Stretch="Uniform" />
+          <Image Source="pack://application:,,,/Assets/hottabych-genie-v2.png" Width="30" Height="30" Stretch="Uniform" />
           <TextBlock Text="::{ХОТТ@БЫ}Ч // DESKTOP::" Foreground="#42F58A" FontSize="14" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
         </StackPanel>
         <Button Grid.Column="1"

@@ -25,10 +25,7 @@ public sealed class SubscriptionService
                 attempt.CancelAfter(TimeSpan.FromSeconds(15));
                 var result = await FetchOneAsync(candidate, attempt.Token);
                 if (result is not null)
-                {
-                    await DownloadRoutingAssetsAsync(token);
                     return result;
-                }
             }
             catch (OperationCanceledException) when (!token.IsCancellationRequested)
             {
@@ -43,18 +40,20 @@ public sealed class SubscriptionService
         throw lastError ?? new InvalidOperationException("Не удалось обновить подписку");
     }
 
-    private async Task<SubscriptionResult?> FetchOneAsync(string url, CancellationToken token)
+    private async Task<SubscriptionResult?> FetchOneAsync(string url, CancellationToken token, bool singBoxCompatibilityRetry = false)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
             return null;
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.UserAgent.Clear();
-        request.Headers.UserAgent.ParseAdd("Lampa-Desktop/1.0");
+        request.Headers.UserAgent.ParseAdd(singBoxCompatibilityRetry ? "LxBox-android/2.20.12" : "Lampa-Desktop-SB");
         request.Headers.TryAddWithoutValidation("X-Lampa-Client", "desktop");
         using var response = await _http.SendAsync(request, token);
         if (!response.IsSuccessStatusCode) return null;
         var body = (await response.Content.ReadAsStringAsync(token)).Trim();
         if (body.Length == 0) return null;
+        if (!singBoxCompatibilityRetry && IsLegacyXrayResponse(body))
+            return await FetchOneAsync(url, token, true);
         var metadata = ReadMetadata(response);
         var customProfiles = TryReadCustomConfigs(body);
         if (customProfiles.Count > 0) return new SubscriptionResult(customProfiles, metadata);
@@ -69,10 +68,15 @@ public sealed class SubscriptionService
         return new SubscriptionResult(profiles, metadata);
     }
 
-    private static async Task DownloadRoutingAssetsAsync(CancellationToken token)
+    private static bool IsLegacyXrayResponse(string body)
     {
-        try { await GeoAssetService.EnsurePrimaryAssetsAsync(token); }
-        catch { /* Bundled geo files still allow connect; refresh can retry later. */ }
+        try
+        {
+            var node = JsonNode.Parse(body);
+            return node is JsonArray array && array.Count > 0 &&
+                   array[0] is JsonObject first && first["routing"] is not null && first["inbounds"] is not null;
+        }
+        catch { return false; }
     }
 
     private static List<ProxyProfile> TryReadCustomConfigs(string body)
@@ -80,8 +84,18 @@ public sealed class SubscriptionService
         try
         {
             var node = JsonNode.Parse(body);
-            var configs = node is JsonArray array ? array.Where(x => x is JsonObject).ToList()
-                : node is JsonObject obj ? new List<JsonNode?> { obj } : [];
+            if (node is JsonArray outbounds && outbounds.Any(x => x is JsonObject o && o["type"] is not null))
+            {
+                return
+                [
+                    new ProxyProfile
+                    {
+                        Name = "Автовыбор",
+                        ConfigJson = outbounds.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
+                    }
+                ];
+            }
+            var configs = node is JsonObject obj ? new List<JsonNode?> { obj } : [];
             return configs.Select((item, index) => {
                 var config = item!.AsObject();
                 if (config["inbounds"] is null || config["outbounds"] is null || config["routing"] is null) return null;

@@ -1,6 +1,6 @@
-# Xray core
+# sing-box-lx core
 
-Place Windows x64 `xray.exe`, `wintun.dll`, `geoip.dat` and `geosite.dat` in this folder.
+The application ships the custom Windows x64 `sing-box.exe` (`1.14.0-lx.29`) and `wintun.dll` from this folder.
 
 From the repo root:
 
@@ -8,4 +8,4 @@ From the repo root:
 .\scripts\fetch-core.ps1
 ```
 
-Compat databases (`geoip-compat.dat`, `geosite-compat.dat`) are committed. Full geo databases are downloaded at runtime if missing or stale.
+Routing databases are remote binary SRS rule-sets. sing-box caches and refreshes them through the configured HTTP clients.

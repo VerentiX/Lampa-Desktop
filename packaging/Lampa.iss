@@ -1,5 +1,5 @@
 #define MyAppName "Lampa Desktop"
-#define MyAppVersion "1.0.4"
+#define MyAppVersion "1.0.5"
 #define MyAppPublisher "Lampa"
 #define MyAppExeName "Lampa.exe"
 
@@ -20,6 +20,7 @@ OutputBaseFilename=LampaSetup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\Lampa.Desktop\Assets\hottabych-genie-v2.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -43,4 +44,4 @@ Name: "{group}\Lampa Desktop"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\Lampa Desktop"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Запустить Lampa Desktop"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Запустить Lampa Desktop"; Verb: "runas"; Flags: shellexec nowait postinstall skipifsilent

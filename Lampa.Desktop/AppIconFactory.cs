@@ -40,8 +40,8 @@ internal static class AppIconFactory
     {
         foreach (var uri in new[]
                  {
-                     new Uri("pack://application:,,,/Assets/hottabych.png", UriKind.Absolute),
-                     new Uri("pack://application:,,,/Lampa;component/Assets/hottabych.png", UriKind.Absolute)
+                     new Uri("pack://application:,,,/Assets/hottabych-genie-v2.png", UriKind.Absolute),
+                     new Uri("pack://application:,,,/Lampa;component/Assets/hottabych-genie-v2.png", UriKind.Absolute)
                  })
         {
             try
@@ -65,7 +65,7 @@ internal static class AppIconFactory
     {
         try
         {
-            var path = Path.Combine(AppContext.BaseDirectory, "Assets", "hottabych.png");
+            var path = Path.Combine(AppContext.BaseDirectory, "Assets", "hottabych-genie-v2.png");
             return File.Exists(path) ? WithTransparentBackground(new Bitmap(path)) : null;
         }
         catch
@@ -100,20 +100,23 @@ internal static class AppIconFactory
         graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
         graphics.Clear(Color.Transparent);
 
-        var background = Color.FromArgb(255, 28, 18, 10);
+        var background = Color.FromArgb(255, 3, 8, 14);
         var statusColor = status switch
         {
-            StatusKind.Connected => Color.FromArgb(255, 46, 213, 89),
+            StatusKind.Connected => Color.FromArgb(255, 66, 245, 138),
             StatusKind.Error => Color.FromArgb(255, 255, 69, 58),
-            _ => Color.FromArgb(255, 142, 142, 147)
+            _ => Color.FromArgb(255, 88, 184, 255)
         };
 
-        using var bgBrush = new SolidBrush(background);
         using var statusBrush = new SolidBrush(statusColor);
 
         var pad = size * 0.04f;
         var body = new RectangleF(pad, pad, size - pad * 2, size - pad * 2);
-        FillRoundRect(graphics, bgBrush, body, size * 0.22f);
+        if (SourceArt is null)
+        {
+            using var fallbackBrush = new SolidBrush(background);
+            FillRoundRect(graphics, fallbackBrush, body, size * 0.22f);
+        }
 
         if (SourceArt is not null)
         {

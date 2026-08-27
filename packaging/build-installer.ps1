@@ -5,11 +5,13 @@ $publishDir = Join-Path $PSScriptRoot "publish"
 $distDir = Join-Path $root "dist"
 $iss = Join-Path $PSScriptRoot "Lampa.iss"
 $fetchCore = Join-Path $root "scripts\fetch-core.ps1"
-if (-not (Test-Path (Join-Path $root "Lampa.Desktop\core\xray.exe"))) {
+$coreDir = Join-Path $root "Lampa.Desktop\core"
+if (-not (Test-Path (Join-Path $coreDir "sing-box.exe")) -or
+    -not (Test-Path (Join-Path $coreDir "wintun.dll"))) {
   & $fetchCore
 }
 
-Get-Process Lampa, xray -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process Lampa, sing-box -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 
 if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }

@@ -6,7 +6,7 @@ namespace Lampa.Desktop.Models;
 public sealed class AppSettings
 {
     public string SubscriptionUrl { get; set; } = "";
-    public string CorePath { get; set; } = "core\\xray.exe";
+    public string CorePath { get; set; } = "core\\sing-box.exe";
     public bool DesiredConnected { get; set; }
     public bool StartWithWindows { get; set; } = true;
     public bool AutoReconnect { get; set; } = true;
@@ -24,6 +24,8 @@ public sealed class AppSettings
     public long SubscriptionTotal { get; set; }
     public long SubscriptionExpire { get; set; }
     public int SubscriptionUpdateHours { get; set; } = 24;
+    /// <summary>Increment when the worker subscription format or required User-Agent changes.</summary>
+    public int SubscriptionSchemaVersion { get; set; }
     public DateTimeOffset? LastGeoUpdate { get; set; }
     public int GeoUpdateDays { get; set; } = 3;
     public string ProfileRouting { get; set; } = "";
@@ -60,9 +62,13 @@ public sealed class AppSettings
             if (settings.SubscriptionUpdateHours is < 6 or > 72) settings.SubscriptionUpdateHours = 24;
             if (settings.GeoUpdateDays is < 1 or > 7) settings.GeoUpdateDays = 3;
             if (settings.AppUpdateDays is < 3 or > 30) settings.AppUpdateDays = 7;
+            // Режим маршрутизации больше не выбирается в интерфейсе.
+            settings.UseFullBlockList = true;
             // Старые settings без ключа → новый режим по умолчанию.
             if (!text.Contains("\"RouteExceptRussia\"", StringComparison.Ordinal))
                 settings.RouteExceptRussia = true;
+            if (settings.CorePath.EndsWith("xray.exe", StringComparison.OrdinalIgnoreCase))
+                settings.CorePath = "core\\sing-box.exe";
             return settings;
         }
         catch { return new(); }

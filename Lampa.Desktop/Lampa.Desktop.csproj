@@ -8,20 +8,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Lampa</AssemblyName>
     <RootNamespace>Lampa.Desktop</RootNamespace>
-    <Version>1.0.4</Version>
-    <FileVersion>1.0.4.0</FileVersion>
-    <InformationalVersion>1.0.4</InformationalVersion>
+    <Version>1.0.5</Version>
+    <FileVersion>1.0.5.0</FileVersion>
+    <InformationalVersion>1.0.5</InformationalVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\hottabych-genie-v2.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
-    <Resource Include="Assets\hottabych.png" />
-    <Content Include="Assets\hottabych.png" CopyToOutputDirectory="PreserveNewest" />
+    <Resource Include="Assets\hottabych-genie-v2.png" />
+    <Content Include="Assets\hottabych-genie-v2.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\logo.png" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="core\xray.exe" CopyToOutputDirectory="Always" Condition="Exists('core\xray.exe')" />
-    <Content Include="core\geoip.dat" CopyToOutputDirectory="Always" Condition="Exists('core\geoip.dat')" />
-    <Content Include="core\geosite.dat" CopyToOutputDirectory="Always" Condition="Exists('core\geosite.dat')" />
-    <Content Include="core\geosite-compat.dat" CopyToOutputDirectory="Always" />
-    <Content Include="core\geoip-compat.dat" CopyToOutputDirectory="Always" />
+    <Content Include="core\sing-box.exe" CopyToOutputDirectory="Always" Condition="Exists('core\sing-box.exe')" />
     <Content Include="core\wintun.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('core\wintun.dll')" />
     <Content Include="core\LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="core\LICENSE-wintun.txt" CopyToOutputDirectory="PreserveNewest" />

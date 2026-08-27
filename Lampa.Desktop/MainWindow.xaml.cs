@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private bool _isConnected;
     private bool _settingsUiReady;
     private bool _powerClickBusy;
+    private ConnectionState _renderedState = ConnectionState.Disconnected;
     private List<string> _draftProxyDomains = [];
     private List<string> _draftDirectDomains = [];
 
@@ -39,6 +40,9 @@ public partial class MainWindow : Window
         // ConnectionSupervisor может запустить EnsureConnectedAsync.
         _settings.DesiredConnected = false;
         _settings.AutoReconnect = true;
+        // Пользовательский переключатель маршрутизации скрыт: приложение
+        // всегда использует полный набор SRS-правил.
+        _settings.UseFullBlockList = true;
         _settings.Save();
         _connection = new ConnectionSupervisor(_settings);
         _connection.StateChanged += (state, message) => Dispatcher.Invoke(() => RenderState(state, message));
@@ -85,6 +89,7 @@ public partial class MainWindow : Window
         {
             StartupManager.SetEnabled(_settings.StartWithWindows);
             await Task.Delay(4000);
+            await EnsureSubscriptionSchemaAsync();
             await RunBackgroundUpdatesAsync();
         };
     }
@@ -297,12 +302,12 @@ public partial class MainWindow : Window
         ToggleLinkBtn.Content = show ? "Скрыть ссылку" : "Показать ссылку";
     }
 
-    private async Task RefreshSubscriptionAsync(bool silent = false)
+    private async Task<bool> RefreshSubscriptionAsync(bool silent = false)
     {
         if (string.IsNullOrWhiteSpace(_settings.SubscriptionUrl))
         {
             if (!silent) StatusHint.Text = "Сначала импортируйте ссылку через +";
-            return;
+            return false;
         }
 
         try
@@ -324,17 +329,39 @@ public partial class MainWindow : Window
             _settings.Save();
             ReloadProfiles();
             if (!silent) StatusHint.Text = "Конфигурация обновлена";
+            return true;
         }
         catch (Exception ex)
         {
             if (silent)
             {
                 ReloadProfiles();
-                return;
+                return false;
             }
             SubscriptionMetaText.Text = "Ошибка обновления";
             StatusHint.Text = ex.Message;
+            return false;
         }
+    }
+
+    private async Task EnsureSubscriptionSchemaAsync()
+    {
+        const int currentSchema = 1; // Lampa-Desktop-SB / sing-box outbound array.
+        if (_settings.SubscriptionSchemaVersion >= currentSchema) return;
+        if (string.IsNullOrWhiteSpace(_settings.SubscriptionUrl))
+        {
+            // A subscription imported later is immediately requested with the
+            // current User-Agent, so there is nothing to migrate yet.
+            _settings.SubscriptionSchemaVersion = currentSchema;
+            _settings.Save();
+            return;
+        }
+
+        // Ignore LastSubscriptionUpdate once after upgrading from the legacy
+        // client. Retry on later starts until the new format succeeds.
+        if (!await RefreshSubscriptionAsync(silent: true)) return;
+        _settings.SubscriptionSchemaVersion = currentSchema;
+        _settings.Save();
     }
 
     private void SaveSettings_Click(object sender, RoutedEventArgs e)
@@ -402,7 +429,6 @@ public partial class MainWindow : Window
     private async Task RunBackgroundUpdatesAsync()
     {
         try { await MaybeRefreshSubscriptionAsync(); } catch { }
-        try { await MaybeRefreshGeoAsync(); } catch { }
         try { await _appUpdates.CheckAndContinueAsync(_settings, ignoreInterval: false, _lifetime.Token); } catch { }
     }
 
@@ -413,26 +439,6 @@ public partial class MainWindow : Window
         if (_settings.LastSubscriptionUpdate is { } last && DateTimeOffset.Now - last < TimeSpan.FromHours(hours))
             return;
         await RefreshSubscriptionAsync(silent: true);
-    }
-
-    private async Task MaybeRefreshGeoAsync()
-    {
-        var last = _settings.LastGeoUpdate ?? GeoAssetService.InferLastUpdate();
-        var days = Math.Clamp(_settings.GeoUpdateDays, 1, 7);
-        if (last is { } stamp && DateTimeOffset.Now - stamp < TimeSpan.FromDays(days))
-        {
-            if (_settings.LastGeoUpdate is null)
-            {
-                _settings.LastGeoUpdate = stamp;
-                _settings.Save();
-            }
-            return;
-        }
-
-        await GeoAssetService.RefreshAsync(CancellationToken.None);
-        _settings.LastGeoUpdate = DateTimeOffset.Now;
-        _settings.Save();
-        if (_isConnected) await RestartTunnelAsync();
     }
 
     private static string FormatHours(int hours)
@@ -564,21 +570,26 @@ public partial class MainWindow : Window
         _isConnected = active;
         StatusBadgeText.Text = state switch
         {
-            ConnectionState.Connected => "Подключено",
-            ConnectionState.Connecting => "Подключение…",
-            ConnectionState.Recovering => "Восстановление…",
-            ConnectionState.Paused => "Пауза",
-            ConnectionState.Error => "Ошибка",
-            _ => "Не подключено"
+            ConnectionState.Connected => ":: ПОДКЛЮЧЕНО ::",
+            ConnectionState.Connecting => ":: СОЕДИНЕНИЕ... ::",
+            ConnectionState.Recovering => ":: ВОССТАНОВЛЕНИЕ... ::",
+            ConnectionState.Paused => ":: ПАУЗА ::",
+            ConnectionState.Error => ":: ОШИБКА ::",
+            _ => ":: НЕ В СЕТИ ::"
         };
-        StatusBadgeText.Foreground = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(active ? "#FFB300" : "#99FFFFFF")!);
+        var busy = state is ConnectionState.Connecting or ConnectionState.Recovering;
+        var statusColor = state == ConnectionState.Error ? "#FF453A" : active ? "#42F58A" : busy ? "#FF9D1C" : "#9CCEF5";
+        StatusBadgeText.Foreground = Brush(statusColor);
 
         StatusHint.Text = message;
-        SetPowerBusy(state is ConnectionState.Connecting or ConnectionState.Recovering);
-        PowerButton.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(active ? "#FFB300" : "#16100B")!);
-        PowerButton.BorderBrush = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(active ? "#FFD36A" : "#C8FFB300")!);
-        PowerButton.Foreground = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(active ? "#1A0F08" : "#FFB300")!);
+        SetPowerBusy(busy);
+        PowerButton.Background = Brush(active ? "#FF9D1C" : busy ? "#332414" : "#E0091320");
+        PowerButton.BorderBrush = Brush(active ? "#FFD36A" : busy ? "#FF9D1C" : "#B058B8FF");
+        PowerButton.Foreground = Brush(active ? "#07111D" : busy ? "#FF9D1C" : "#42F58A");
         PowerButton.ToolTip = active ? "Отключить" : "Подключить";
+        if (active && _renderedState != ConnectionState.Connected)
+            ((Storyboard)FindResource("PowerConnectedStoryboard")).Begin(this, true);
+        _renderedState = state;
         _tray.Text = state switch
         {
             ConnectionState.Connected => "Lampa Desktop — подключено",
@@ -618,6 +629,9 @@ public partial class MainWindow : Window
         PowerScale.ScaleY = 1;
     }
 
+    private static SolidColorBrush Brush(string color) =>
+        new((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(color)!);
+
     private void UpdateConnectionTimer()
     {
         if (_connectedSince is null) return;
@@ -651,10 +665,18 @@ public partial class MainWindow : Window
     {
         FullRoutingBtn.Tag = _settings.UseFullBlockList ? "active" : null;
         FastRoutingBtn.Tag = _settings.UseFullBlockList ? null : "active";
+        RenderRoutePolicy();
     }
 
     private void RenderRoutePolicy()
     {
+        ExceptRuRouteBtn.IsEnabled = !_settings.UseFullBlockList;
+        BlockedOnlyRouteBtn.IsEnabled = !_settings.UseFullBlockList;
+        if (_settings.UseFullBlockList)
+        {
+            RoutePolicyHint.Text = "P0–P4: блокировки и геоограничения через VPN, остальное напрямую. P5+: режим белых списков.";
+            return;
+        }
         ExceptRuRouteBtn.Tag = _settings.RouteExceptRussia ? "active" : null;
         BlockedOnlyRouteBtn.Tag = _settings.RouteExceptRussia ? null : "active";
         RoutePolicyHint.Text = _settings.RouteExceptRussia

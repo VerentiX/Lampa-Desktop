@@ -5,6 +5,7 @@ obj/
 *.suo
 dist/
 run/
+run-*/
 packaging/publish/
 *.log
 
