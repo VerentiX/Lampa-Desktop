@@ -16,12 +16,13 @@ DefaultGroupName=Lampa
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 OutputDir=..\dist
-OutputBaseFilename=LampaSetup
+OutputBaseFilename=LampaSetup-{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=..\Lampa.Desktop\Assets\hottabych-genie-v2.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
+UninstallDisplayName={#MyAppName}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
@@ -43,5 +44,28 @@ Source: "publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs creat
 Name: "{group}\Lampa Desktop"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\Lampa Desktop"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "Lampa"; Flags: uninsdeletevalue
+
+[UninstallRun]
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--shutdown-for-uninstall"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "GracefulShutdown"
+Filename: "{cmd}"; Parameters: "/C taskkill /IM {#MyAppExeName} /T /F >nul 2>&1"; Flags: runhidden waituntilterminated; RunOnceId: "ForcedShutdownFallback"
+
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Запустить Lampa Desktop"; Verb: "runas"; Flags: shellexec nowait postinstall skipifsilent
+
+[Code]
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataDir: string;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    DataDir := ExpandConstant('{localappdata}\Lampa');
+    if DirExists(DataDir) and
+       (MsgBox('Удалить настройки, подписку, правила и кэш Lampa?'#13#10 +
+               'Если вы планируете установить приложение снова, выберите «Нет».',
+               mbConfirmation, MB_YESNO) = IDYES) then
+      DelTree(DataDir, True, True, True);
+  end;
+end;

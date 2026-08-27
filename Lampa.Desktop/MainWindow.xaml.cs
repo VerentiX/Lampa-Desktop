@@ -855,4 +855,12 @@ public partial class MainWindow : Window
         _tray.Dispose();
         System.Windows.Application.Current.Shutdown();
     }
+
+    internal void ExitApplicationForUninstall()
+    {
+        // Execute in the interactive user's process so the correct HKCU Run
+        // value is removed even when the uninstaller itself is elevated.
+        StartupManager.SetEnabled(false);
+        ExitApplication();
+    }
 }
