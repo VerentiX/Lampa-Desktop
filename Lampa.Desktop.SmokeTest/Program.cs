@@ -15,6 +15,10 @@ foreach (var profile in result.Profiles)
         var fullP0 = JsonNode.Parse(SingBoxConfigBuilder.Build(profile, 10809, true, result.Metadata.ProfileRouting,
             [@"C:\Program Files\Direct App\app.exe"], 0, useFullBlockList: true, routeExceptRussia: true))!.AsObject();
         var fullRules = fullP0["route"]!["rules"]!.AsArray();
+        var bootstrapDns = fullP0["dns"]!["servers"]!.AsArray()
+            .OfType<JsonObject>().Single(x => x["tag"]?.GetValue<string>() == "dns-bootstrap");
+        if (bootstrapDns["type"]?.GetValue<string>() != "local" || bootstrapDns["server"] is not null)
+            throw new Exception("Bootstrap DNS must use the Windows system resolver");
         if (!fullRules.Any(x => x?["network"]?.GetValue<string>() == "udp" &&
                                 x?["port"]?.GetValue<int>() == 443 &&
                                 x?["action"]?.GetValue<string>() == "reject"))

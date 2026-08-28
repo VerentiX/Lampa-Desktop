@@ -141,11 +141,14 @@ public static class SingBoxConfigBuilder
         var selectiveFullRouting = useFullBlockList && activePriority < 5;
         var servers = new JsonArray
         {
-            new JsonObject { ["type"] = "udp", ["tag"] = "dns-bootstrap", ["server"] = "1.1.1.1", ["server_port"] = 53 },
+            // Bootstrap and remote rule-set hostnames must use the Windows
+            // resolver.  A fixed 1.1.1.1:53 dependency breaks startup on
+            // networks that block third-party UDP DNS.
+            new JsonObject { ["type"] = "local", ["tag"] = "dns-bootstrap" },
             new JsonObject
             {
                 ["type"] = "https", ["tag"] = "dns-tunnel", ["server"] = "1.1.1.1", ["server_port"] = 443,
-                ["path"] = "/dns-query", ["domain_resolver"] = "dns-bootstrap", ["detour"] = ProxyTag
+                ["path"] = "/dns-query", ["detour"] = ProxyTag
             }
         };
         if (selectiveFullRouting)
