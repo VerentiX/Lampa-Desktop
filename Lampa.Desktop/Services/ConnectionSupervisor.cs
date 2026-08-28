@@ -125,9 +125,14 @@ public sealed class ConnectionSupervisor : IDisposable
             lock (_coreLogLock)
             {
                 var logPath = Path.Combine(AppSettings.DataDirectory, "core.log");
+                var backupPath = Path.Combine(AppSettings.DataDirectory, "core.log.old");
+                // Builds predating the 1 MB rotation limit may have left a
+                // very large backup behind.  Remove it immediately instead
+                // of waiting until the current log fills up again.
+                if (File.Exists(backupPath) && new FileInfo(backupPath).Length > 1 * 1024 * 1024)
+                    File.Delete(backupPath);
                 if (File.Exists(logPath) && new FileInfo(logPath).Length >= 1 * 1024 * 1024)
                 {
-                    var backupPath = Path.Combine(AppSettings.DataDirectory, "core.log.old");
                     File.Move(logPath, backupPath, true);
                 }
                 File.AppendAllText(logPath, e.Data + Environment.NewLine);

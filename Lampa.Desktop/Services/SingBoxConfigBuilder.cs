@@ -216,7 +216,11 @@ public static class SingBoxConfigBuilder
         var rules = new JsonArray
         {
             new JsonObject { ["action"] = "sniff", ["timeout"] = "300ms" },
-            new JsonObject { ["protocol"] = "dns", ["action"] = "hijack-dns" }
+            new JsonObject { ["protocol"] = "dns", ["action"] = "hijack-dns" },
+            // Force browsers to fall back immediately to HTTP/2 over TCP.  On
+            // networks where UDP/443 is filtered, a QUIC attempt otherwise
+            // stalls before the browser retries the same request over TCP.
+            new JsonObject { ["network"] = "udp", ["port"] = 443, ["action"] = "reject" }
         };
         AddDomainRule(rules, customProxyDomains, ProxyTag);
         AddDomainRule(rules, customDirectDomains, "direct");

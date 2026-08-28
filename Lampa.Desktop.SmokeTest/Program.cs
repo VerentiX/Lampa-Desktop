@@ -15,6 +15,10 @@ foreach (var profile in result.Profiles)
         var fullP0 = JsonNode.Parse(SingBoxConfigBuilder.Build(profile, 10809, true, result.Metadata.ProfileRouting,
             [@"C:\Program Files\Direct App\app.exe"], 0, useFullBlockList: true, routeExceptRussia: true))!.AsObject();
         var fullRules = fullP0["route"]!["rules"]!.AsArray();
+        if (!fullRules.Any(x => x?["network"]?.GetValue<string>() == "udp" &&
+                                x?["port"]?.GetValue<int>() == 443 &&
+                                x?["action"]?.GetValue<string>() == "reject"))
+            throw new Exception("Desktop config must reject QUIC so browsers immediately fall back to TCP");
         if (fullP0["route"]?["final"]?.GetValue<string>() != "direct" ||
             fullP0["dns"]?["final"]?.GetValue<string>() != "dns-direct" ||
             !fullRules.Any(x => x?["rule_set"]?.ToJsonString().Contains("refilter-domains") == true))
