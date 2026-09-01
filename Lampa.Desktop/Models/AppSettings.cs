@@ -41,6 +41,8 @@ public sealed class AppSettings
     /// false = в прокси только ru-blocked-all (старый split).
     /// </summary>
     public bool RouteExceptRussia { get; set; } = true;
+    /// <summary>Enables P5+ routes intended for restricted white-list networks.</summary>
+    public bool WhitelistMode { get; set; }
     public int AppUpdateDays { get; set; } = 7;
     public DateTimeOffset? LastAppUpdateCheck { get; set; }
     public string PendingUpdateVersion { get; set; } = "";

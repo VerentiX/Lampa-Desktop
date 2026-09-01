@@ -31,6 +31,7 @@ public sealed class ConnectionSupervisor : IDisposable
     private int _priorityConfirmations;
     private readonly object _coreLogLock = new();
     public ConnectionState State { get; private set; }
+    public string ActiveRouteName { get; private set; } = "";
     public event Action<ConnectionState, string>? StateChanged;
 
     public ConnectionSupervisor(AppSettings settings)
@@ -92,7 +93,7 @@ public sealed class ConnectionSupervisor : IDisposable
                 var configJson = await Task.Run(() => SingBoxConfigBuilder.Build(profile, _settings.LocalHttpPort,
                     _settings.UseTun, routing, _settings.BypassApplications, _settings.ActivePriority,
                     _settings.CustomProxyDomains, _settings.CustomDirectDomains, _settings.UseFullBlockList,
-                    _settings.RouteExceptRussia, _settings.GeoUpdateDays)).ConfigureAwait(false);
+                    _settings.RouteExceptRussia, _settings.GeoUpdateDays, _settings.WhitelistMode)).ConfigureAwait(false);
                 await File.WriteAllTextAsync(configPath, configJson).ConfigureAwait(false);
                 _readyConfigFingerprint = fingerprint;
             }
@@ -181,6 +182,7 @@ public sealed class ConnectionSupervisor : IDisposable
                 var match = Regex.Match(current, @"(?:^|[^a-z0-9])p(\d+)(?=[^0-9]|$)", RegexOptions.IgnoreCase);
                 if (match.Success && int.TryParse(match.Groups[1].Value, out var priority))
                 {
+                    ActiveRouteName = current;
                     if (!string.Equals(_priorityCandidate, current, StringComparison.Ordinal))
                     {
                         _priorityCandidate = current;
@@ -326,6 +328,7 @@ public sealed class ConnectionSupervisor : IDisposable
             _settings.ActivePriority,
             _settings.UseFullBlockList,
             _settings.RouteExceptRussia,
+            _settings.WhitelistMode,
             _settings.GeoUpdateDays,
             string.Join(',', _settings.BypassApplications),
             string.Join(',', _settings.CustomProxyDomains),

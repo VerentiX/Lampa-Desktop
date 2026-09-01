@@ -153,7 +153,11 @@ public static class CoreConfigBuilder
         var profile = SelectRoutingProfile(bundle, activePriority, routeExceptRussia);
         if (profile is not null)
         {
-            routing["domainStrategy"] = "AsIs";
+            // Domain rules are checked first; if none match, resolve the
+            // destination so the profile's IP rules can still select the
+            // correct outbound.  Keeping AsIs here silently bypassed those IP
+            // lists for domain-based connections.
+            routing["domainStrategy"] = "IPIfNonMatch";
             foreach (var step in ReadStrings(profile, "routeOrder", "RouteOrder").DefaultIfEmpty("block-proxy-direct")
                          .SelectMany(x => x.Split('-', StringSplitOptions.RemoveEmptyEntries)))
             {

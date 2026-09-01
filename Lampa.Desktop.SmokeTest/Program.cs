@@ -27,6 +27,11 @@ foreach (var profile in result.Profiles)
             fullP0["dns"]?["final"]?.GetValue<string>() != "dns-direct" ||
             !fullRules.Any(x => x?["rule_set"]?.ToJsonString().Contains("refilter-domains") == true))
             throw new InvalidOperationException("Full P0 routing was not applied.");
+        var resolveIndex = fullRules.Select((rule, index) => (rule, index))
+            .FirstOrDefault(x => x.rule?["action"]?.GetValue<string>() == "resolve").index;
+        if (resolveIndex <= 0 || !fullRules.Skip(resolveIndex + 1)
+                .Any(x => x?["rule_set"]?.ToJsonString().Contains("refilter-ips") == true))
+            throw new InvalidOperationException("IPIfNonMatch retry pass was not generated.");
 
         var fastP0 = JsonNode.Parse(SingBoxConfigBuilder.Build(profile, 10809, true, result.Metadata.ProfileRouting,
             [], 0, useFullBlockList: false, routeExceptRussia: true))!.AsObject();
@@ -36,10 +41,20 @@ foreach (var profile in result.Profiles)
             throw new InvalidOperationException("Fast P0 routing changed unexpectedly.");
 
         var p5 = JsonNode.Parse(SingBoxConfigBuilder.Build(profile, 10809, true, result.Metadata.ProfileRouting,
-            [], 5, useFullBlockList: true, routeExceptRussia: true))!.AsObject();
+            [], 5, useFullBlockList: true, routeExceptRussia: true, whitelistMode: true))!.AsObject();
         if (!p5["route"]!["rules"]!.AsArray().Any(x => x?["rule_set"]?.ToJsonString().Contains("lampa-sber") == true) ||
             p5["dns"]?["final"]?.GetValue<string>() != "dns-tunnel")
             throw new InvalidOperationException("P5 routing changed unexpectedly.");
+
+        var p0Only = JsonNode.Parse(SingBoxConfigBuilder.Build(profile, 10809, true, result.Metadata.ProfileRouting,
+            [], 5, useFullBlockList: true, routeExceptRussia: true, whitelistMode: false))!.AsObject();
+        if (p0Only["outbounds"]!.AsArray().OfType<JsonObject>()
+            .Any(x => System.Text.RegularExpressions.Regex.IsMatch(x["tag"]?.GetValue<string>() ?? "",
+                @"(?:^|[^a-z0-9])p0*(?:[5-9]|\d{2,})(?=[^0-9]|$)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase)))
+            throw new InvalidOperationException("Whitelist mode off still contains P5+ outbounds.");
+        if (p0Only["route"]?["final"]?.GetValue<string>() != "direct")
+            throw new InvalidOperationException("Whitelist mode off retained P5 routing policy.");
 
         foreach (var (name, config) in new[] { ("full-p0", fullP0), ("fast-p0", fastP0), ("p5", p5) })
         {

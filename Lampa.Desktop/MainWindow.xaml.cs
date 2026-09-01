@@ -60,6 +60,7 @@ public partial class MainWindow : Window
         PauseOnSleepCheck.IsChecked = _settings.PauseVpnOnSleep;
         TunCheck.IsChecked = _settings.UseTun;
         StartupCheck.IsChecked = _settings.StartWithWindows;
+        WhitelistModeCheck.IsChecked = _settings.WhitelistMode;
 
         ReloadProfiles();
         RenderBypassApps();
@@ -380,12 +381,16 @@ public partial class MainWindow : Window
         _settings.PauseVpnOnSleep = PauseOnSleepCheck.IsChecked == true;
         _settings.UseTun = TunCheck.IsChecked == true;
         _settings.StartWithWindows = StartupCheck.IsChecked == true;
+        var whitelistModeChanged = _settings.WhitelistMode != (WhitelistModeCheck.IsChecked == true);
+        _settings.WhitelistMode = WhitelistModeCheck.IsChecked == true;
+        if (!_settings.WhitelistMode && _settings.ActivePriority >= 5) _settings.ActivePriority = 0;
         ReadIntervalSliders();
         _settings.Save();
         StartupManager.SetEnabled(_settings.StartWithWindows);
         RenderModeToggle();
         RenderRoutePolicy();
         StatusHint.Text = "Настройки сохранены";
+        if (whitelistModeChanged && _isConnected) _ = RestartTunnelAsync();
     }
 
     private void PauseOnSleepCheck_Changed(object sender, RoutedEventArgs e)
@@ -641,6 +646,11 @@ public partial class MainWindow : Window
 
     private void UpdateConnectionTimer()
     {
+        SettingsCurrentConnectionText.Text = !_isConnected
+            ? "Не подключено"
+            : string.IsNullOrWhiteSpace(_connection.ActiveRouteName)
+                ? $"Подключено · P{_settings.ActivePriority}"
+                : $"Подключено · {_connection.ActiveRouteName}";
         if (_connectedSince is null) return;
         var elapsed = DateTimeOffset.Now - _connectedSince.Value;
         ConnectionTimerText.Text = $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";

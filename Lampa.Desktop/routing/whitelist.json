@@ -37,7 +37,7 @@
   "ProxyIp": [],
   "BlockSites": [],
   "BlockIp": [],
-  "DomainStrategy": "AsIs",
+  "DomainStrategy": "IPIfNonMatch",
   "FakeDNS": "false",
   "UseChunkFiles": "true"
 }

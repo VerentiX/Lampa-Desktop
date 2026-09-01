@@ -13,16 +13,19 @@ public static class SingBoxConfigBuilder
     public static string Build(ProxyProfile profile, int httpPort, bool useTun = true,
         string profileRouting = "", IReadOnlyCollection<string>? bypassApplications = null, int activePriority = 0,
         IReadOnlyCollection<string>? customProxyDomains = null, IReadOnlyCollection<string>? customDirectDomains = null,
-        bool useFullBlockList = true, bool routeExceptRussia = false, int ruleSetUpdateDays = 3)
+        bool useFullBlockList = true, bool routeExceptRussia = false, int ruleSetUpdateDays = 3,
+        bool whitelistMode = false)
     {
+        var effectivePriority = whitelistMode ? activePriority : Math.Min(activePriority, 4);
         var outbounds = ReadOutbounds(profile);
         NormalizeOutbounds(outbounds);
+        if (!whitelistMode) RemoveWhitelistPriorityOutbounds(outbounds);
         EnsureSystemOutbounds(outbounds);
 
         var root = new JsonObject
         {
             ["log"] = new JsonObject { ["level"] = "warn", ["timestamp"] = true },
-            ["dns"] = BuildDns(useFullBlockList, activePriority, customProxyDomains ?? []),
+            ["dns"] = BuildDns(useFullBlockList, effectivePriority, customProxyDomains ?? []),
             ["inbounds"] = BuildInbounds(httpPort, useTun),
             ["outbounds"] = outbounds,
             ["http_clients"] = new JsonArray
@@ -30,7 +33,7 @@ public static class SingBoxConfigBuilder
                 new JsonObject { ["tag"] = "rules-direct" },
                 new JsonObject { ["tag"] = "rules-proxy", ["detour"] = ProxyTag }
             },
-            ["route"] = BuildRoute(bypassApplications ?? [], activePriority,
+            ["route"] = BuildRoute(bypassApplications ?? [], effectivePriority,
                 customProxyDomains ?? [], customDirectDomains ?? [], useFullBlockList, routeExceptRussia,
                 Math.Clamp(ruleSetUpdateDays, 1, 7)),
             ["experimental"] = new JsonObject
@@ -49,6 +52,58 @@ public static class SingBoxConfigBuilder
             }
         };
         return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private static void RemoveWhitelistPriorityOutbounds(JsonArray outbounds)
+    {
+        static bool IsP5OrHigher(string? tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag)) return false;
+            var match = System.Text.RegularExpressions.Regex.Match(tag,
+                @"(?:^|[^a-z0-9])p0*(\d+)(?=[^0-9]|$)",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return match.Success && int.TryParse(match.Groups[1].Value, out var priority) && priority >= 5;
+        }
+
+        foreach (var outbound in outbounds.OfType<JsonObject>())
+        {
+            if (outbound["outbounds"] is not JsonArray members) continue;
+            for (var i = members.Count - 1; i >= 0; i--)
+            {
+                if (members[i] is JsonValue value && value.TryGetValue<string>(out var tag) && IsP5OrHigher(tag))
+                    members.RemoveAt(i);
+            }
+        }
+
+        for (var i = outbounds.Count - 1; i >= 0; i--)
+        {
+            if (outbounds[i] is JsonObject outbound && IsP5OrHigher(outbound["tag"]?.GetValue<string>()))
+                outbounds.RemoveAt(i);
+        }
+
+        // Remove nodes which were used only by the disabled P5+ branches.
+        var byTag = outbounds.OfType<JsonObject>()
+            .Where(x => !string.IsNullOrWhiteSpace(x["tag"]?.GetValue<string>()))
+            .ToDictionary(x => x["tag"]!.GetValue<string>(), StringComparer.OrdinalIgnoreCase);
+        var reachable = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ProxyTag, "direct", "block" };
+        var queue = new Queue<string>(reachable);
+        while (queue.TryDequeue(out var tag))
+        {
+            if (!byTag.TryGetValue(tag, out var outbound)) continue;
+            if (outbound["outbounds"] is JsonArray members)
+            {
+                foreach (var member in members.OfType<JsonValue>())
+                    if (member.TryGetValue<string>(out var child) && reachable.Add(child)) queue.Enqueue(child);
+            }
+            if (outbound["detour"] is JsonValue detour && detour.TryGetValue<string>(out var parent) && reachable.Add(parent))
+                queue.Enqueue(parent);
+        }
+
+        for (var i = outbounds.Count - 1; i >= 0; i--)
+        {
+            var tag = outbounds[i]?["tag"]?.GetValue<string>();
+            if (!string.IsNullOrWhiteSpace(tag) && !reachable.Contains(tag)) outbounds.RemoveAt(i);
+        }
     }
 
     private static JsonArray ReadOutbounds(ProxyProfile profile)
@@ -242,6 +297,9 @@ public static class SingBoxConfigBuilder
         AddInlineRuleSet(ruleSets, "lampa-sber", ["sber.ru", "sberbank.ru", "sberbank.com", "sbrf.ru", "sbercloud.ru", "sberdevices.ru", "sbermobile.ru", "sberspasibo.ru"]);
         AddInlineRuleSet(ruleSets, "lampa-tbank", ["tbank.ru", "tinkoff.ru", "tinkoff.com", "tcsbank.ru", "tinkoffjournal.ru", "tinkoffmobile.com", "t-j.ru", "t-static.ru", "t-tech.ru"]);
 
+        // First pass keeps AsIs-like behaviour: domain and already-known IP
+        // rules can match without forcing a DNS lookup.
+        var profileRuleStart = rules.Count;
         if (p5)
         {
             rules.Add(new JsonObject { ["rule_set"] = new JsonArray("lampa-sber", "lampa-tbank"), ["outbound"] = ProxyTag });
@@ -272,6 +330,18 @@ public static class SingBoxConfigBuilder
                 ["outbound"] = "direct"
             });
         }
+
+        // Native sing-box has no global Xray `IPIfNonMatch` switch.  Reproduce
+        // it explicitly: only traffic that did not match the first pass is
+        // resolved, then the same profile rules are retried so IP entries in
+        // mixed SRS sets can select the intended outbound.  Raw-IP traffic and
+        // domains matched on the first pass pay no extra DNS lookup.
+        var retryRules = rules.Skip(profileRuleStart)
+            .Select(rule => rule?.DeepClone())
+            .ToArray();
+        rules.Add(new JsonObject { ["action"] = "resolve", ["strategy"] = "ipv4_only" });
+        foreach (var retryRule in retryRules)
+            rules.Add(retryRule);
 
         return new JsonObject
         {

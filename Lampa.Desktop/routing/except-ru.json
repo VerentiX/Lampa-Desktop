@@ -26,7 +26,7 @@
     "geosite:category-ads-all"
   ],
   "BlockIp": [],
-  "DomainStrategy": "AsIs",
+  "DomainStrategy": "IPIfNonMatch",
   "FakeDNS": "false",
   "UseChunkFiles": "true"
 }
