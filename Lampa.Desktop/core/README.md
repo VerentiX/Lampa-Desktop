@@ -1,6 +1,6 @@
 # sing-box-lx core
 
-The application ships the custom Windows x64 `sing-box.exe` (`1.14.0-lx.29`) and `wintun.dll` from this folder.
+The application ships the custom Windows x64 `sing-box.exe` (`1.14.0-lx.39-custom`) and `wintun.dll` from this folder.
 
 From the repo root:
 

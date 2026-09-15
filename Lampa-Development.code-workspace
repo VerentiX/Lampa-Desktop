@@ -1,0 +1,20 @@
+{
+  "folders": [
+    {
+      "name": "Lampa Desktop",
+      "path": "."
+    },
+    {
+      "name": "sing-box lx.39 custom core",
+      "path": "C:/Users/Petr/Documents/Codex/2026-08-24/sing-box-lx-lx-x20/work/sing-box-lx-39-custom"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/.gocache": true,
+      "**/.gomodcache": true,
+      "**/bin": true,
+      "**/obj": true
+    }
+  }
+}
