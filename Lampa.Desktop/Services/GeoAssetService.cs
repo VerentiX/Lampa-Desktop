@@ -59,6 +59,15 @@ public static class GeoAssetService
         return new FileInfo(path).LastWriteTimeUtc;
     }
 
+    public static void InvalidateRuleSetCache()
+    {
+        var path = Path.Combine(Lampa.Desktop.Models.AppSettings.DataDirectory, "sing-box-cache.db");
+        foreach (var candidate in new[] { path, path + "-shm", path + "-wal" })
+        {
+            try { if (File.Exists(candidate)) File.Delete(candidate); } catch { }
+        }
+    }
+
     public static void CopyBundledPrimary(string assetDirectory)
     {
         var bundledCore = Path.Combine(AppContext.BaseDirectory, "core");

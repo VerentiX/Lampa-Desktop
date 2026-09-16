@@ -14,7 +14,7 @@ public static class SingBoxConfigBuilder
         string profileRouting = "", IReadOnlyCollection<string>? bypassApplications = null, int activePriority = 0,
         IReadOnlyCollection<string>? customProxyDomains = null, IReadOnlyCollection<string>? customDirectDomains = null,
         bool useFullBlockList = true, bool routeExceptRussia = false, int ruleSetUpdateDays = 3,
-        bool whitelistMode = false)
+        bool whitelistMode = false, string logLevel = "warn")
     {
         var effectivePriority = whitelistMode ? activePriority : Math.Min(activePriority, 4);
         var outbounds = ReadOutbounds(profile);
@@ -24,7 +24,7 @@ public static class SingBoxConfigBuilder
 
         var root = new JsonObject
         {
-            ["log"] = new JsonObject { ["level"] = "warn", ["timestamp"] = true },
+            ["log"] = new JsonObject { ["level"] = LogStore.ToSingBoxLevel(logLevel), ["timestamp"] = true },
             ["dns"] = BuildDns(useFullBlockList, effectivePriority, customProxyDomains ?? []),
             ["inbounds"] = BuildInbounds(httpPort, useTun),
             ["outbounds"] = outbounds,
@@ -280,6 +280,7 @@ public static class SingBoxConfigBuilder
             // stalls before the browser retries the same request over TCP.
             new JsonObject { ["network"] = "udp", ["port"] = 443, ["action"] = "reject" }
         };
+        rules.Add(new JsonObject { ["rule_set"] = "ads-all", ["outbound"] = "block" });
         AddDomainRule(rules, customProxyDomains, ProxyTag);
         AddDomainRule(rules, customDirectDomains, "direct");
         if (bypassApplications.Count > 0)
@@ -290,6 +291,9 @@ public static class SingBoxConfigBuilder
             });
 
         var ruleSets = new JsonArray();
+        AddRemoteRuleSet(ruleSets, "ads-all",
+            "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ads-all.srs",
+            ruleSetUpdateDays, true);
         AddRemoteRuleSet(ruleSets, "roscom-whitelist", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/whitelist.srs", ruleSetUpdateDays);
         AddRemoteRuleSet(ruleSets, "roscom-category-ru", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/category-ru.srs", ruleSetUpdateDays);
         AddRemoteRuleSet(ruleSets, "roscom-private", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/private.srs", ruleSetUpdateDays);

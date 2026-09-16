@@ -10,7 +10,7 @@ using Lampa.Desktop.Models;
 
 namespace Lampa.Desktop.Services;
 
-public enum AppUpdateUiState { Hidden, Downloading, Ready }
+public enum AppUpdateUiState { Hidden, Available, Downloading, Ready }
 
 public sealed record AppUpdateUi(AppUpdateUiState State, string Message, double Percent, bool CanInstall);
 
@@ -63,8 +63,10 @@ public sealed class AppUpdateService : IDisposable
                 return;
             }
 
-            if (HasPendingDownload(settings))
+            if (IsDownloading(settings) || IsAvailable(settings))
             {
+                settings.PendingUpdateStatus = "downloading";
+                settings.Save();
                 StartDownload(settings);
                 return;
             }
@@ -74,22 +76,38 @@ public sealed class AppUpdateService : IDisposable
                 DateTimeOffset.Now - last < TimeSpan.FromDays(days))
                 return;
 
-            var release = await FindWindowsReleaseAsync(ct);
+            var (release, reached) = await FindWindowsReleaseAsync(ct);
             settings.LastAppUpdateCheck = DateTimeOffset.Now;
             settings.Save();
-            if (release is null) return;
+            if (release is not null)
+            {
+                settings.PendingUpdateVersion = release.Version;
+                settings.PendingUpdateUrl = release.Url;
+                settings.PendingUpdateSize = release.Size;
+                settings.PendingUpdateSha256 = release.Sha256;
+                settings.PendingUpdateStatus = "downloading";
+                settings.Save();
+                LogStore.Instance.WriteApp(AppLogLevel.Info, $"Найдено обновление приложения {release.Version}");
+                StartDownload(settings);
+                return;
+            }
 
-            settings.PendingUpdateVersion = release.Version;
-            settings.PendingUpdateUrl = release.Url;
-            settings.PendingUpdateSize = release.Size;
-            settings.PendingUpdateSha256 = release.Sha256;
-            settings.PendingUpdateStatus = "downloading";
-            settings.Save();
-            StartDownload(settings);
+            if (reached)
+            {
+                if (string.Equals(settings.PendingUpdateStatus, "available", StringComparison.OrdinalIgnoreCase))
+                    ClearPending(settings);
+                Report(new AppUpdateUi(AppUpdateUiState.Hidden, "", 0, false));
+                return;
+            }
+
+            LogStore.Instance.WriteApp(AppLogLevel.Warn, "Не удалось проверить обновление приложения");
         }
-        catch
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // Stay quiet: next timer tick retries.
+        }
+        catch (Exception ex)
+        {
+            LogStore.Instance.WriteApp(AppLogLevel.Warn, $"Не удалось проверить обновление приложения: {ex.Message}");
         }
         finally
         {
@@ -97,15 +115,34 @@ public sealed class AppUpdateService : IDisposable
         }
     }
 
+    public void DownloadPending(AppSettings settings)
+    {
+        if (TryRestoreReady(settings) is { } ready)
+        {
+            Report(new AppUpdateUi(AppUpdateUiState.Ready, $"Версия {ready.Version} готова", 100, true));
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.PendingUpdateUrl) ||
+            string.IsNullOrWhiteSpace(settings.PendingUpdateVersion))
+            return;
+
+        settings.PendingUpdateStatus = "downloading";
+        settings.Save();
+        StartDownload(settings);
+    }
+
     public AppUpdateUi CurrentUi(AppSettings settings)
     {
         if (TryRestoreReady(settings) is { } ready)
             return new AppUpdateUi(AppUpdateUiState.Ready, $"Версия {ready.Version} готова", 100, true);
-        if (HasPendingDownload(settings))
+        if (IsDownloading(settings))
         {
             var percent = ProgressPercent(settings);
             return new AppUpdateUi(AppUpdateUiState.Downloading, $"Скачиваем обновление {percent:0}%", percent, false);
         }
+        if (IsAvailable(settings))
+            return new AppUpdateUi(AppUpdateUiState.Available, $"Доступна версия {settings.PendingUpdateVersion}", 0, false);
         return new AppUpdateUi(AppUpdateUiState.Hidden, "", 0, false);
     }
 
@@ -224,16 +261,18 @@ public sealed class AppUpdateService : IDisposable
             {
                 return;
             }
-            catch
+            catch (Exception ex)
             {
+                LogStore.Instance.WriteApp(AppLogLevel.Warn, $"Не удалось скачать обновление приложения: {ex.Message}");
                 try { await Task.Delay(delay, token); } catch (OperationCanceledException) { return; }
                 delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
             }
         }
     }
 
-    private async Task<WindowsRelease?> FindWindowsReleaseAsync(CancellationToken token)
+    private async Task<(WindowsRelease? Release, bool Reached)> FindWindowsReleaseAsync(CancellationToken token)
     {
+        var reached = false;
         foreach (var api in AppEndpoints.AppLatestCheckUrls)
         {
             try
@@ -245,9 +284,10 @@ public sealed class AppUpdateService : IDisposable
                 if (!response.IsSuccessStatusCode) continue;
                 var json = await response.Content.ReadAsStringAsync(token);
                 var release = api.Equals(AppEndpoints.GitHubLatestReleaseApi, StringComparison.OrdinalIgnoreCase)
-                    ? ParseGitHubRelease(json)
-                    : ParseSiteRelease(json);
-                if (release is not null) return release;
+                    ? ParseGitHubRelease(json, out var pageReached)
+                    : ParseSiteRelease(json, out pageReached);
+                reached |= pageReached;
+                if (release is not null) return (release, true);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -255,11 +295,14 @@ public sealed class AppUpdateService : IDisposable
             }
             catch { /* next URL */ }
         }
-        return null;
+        return (null, reached);
     }
 
-    internal static WindowsRelease? ParseGitHubRelease(string json)
+    internal static WindowsRelease? ParseGitHubRelease(string json) => ParseGitHubRelease(json, out _);
+
+    internal static WindowsRelease? ParseGitHubRelease(string json, out bool reachedLatest)
     {
+        reachedLatest = false;
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object) return null;
@@ -267,7 +310,9 @@ public sealed class AppUpdateService : IDisposable
         if (root.TryGetProperty("prerelease", out var prerelease) && prerelease.ValueKind == JsonValueKind.True) return null;
 
         var version = ReadString(root, "tag_name", "name").Trim().TrimStart('v', 'V');
-        if (version.Length == 0 || CompareVersions(version, CurrentVersion) <= 0) return null;
+        if (version.Length == 0) return null;
+        reachedLatest = true;
+        if (CompareVersions(version, CurrentVersion) <= 0) return null;
         if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) return null;
 
         WindowsAsset? selected = null;
@@ -288,8 +333,11 @@ public sealed class AppUpdateService : IDisposable
             : new WindowsRelease(version, selected.Url, selected.Size, selected.Sha256);
     }
 
-    internal static WindowsRelease? ParseSiteRelease(string json)
+    internal static WindowsRelease? ParseSiteRelease(string json) => ParseSiteRelease(json, out _);
+
+    internal static WindowsRelease? ParseSiteRelease(string json, out bool reachedLatest)
     {
+        reachedLatest = false;
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         if (root.ValueKind != JsonValueKind.Object) return null;
@@ -297,7 +345,9 @@ public sealed class AppUpdateService : IDisposable
 
         var tag = ReadString(root, "tag", "tag_name", "version");
         var version = tag.Trim().TrimStart('v', 'V');
-        if (version.Length == 0 || CompareVersions(version, CurrentVersion) <= 0) return null;
+        if (version.Length == 0) return null;
+        reachedLatest = true;
+        if (CompareVersions(version, CurrentVersion) <= 0) return null;
 
         var asset = PickWindowsAsset(root);
         if (asset is null) return null;
@@ -441,13 +491,22 @@ public sealed class AppUpdateService : IDisposable
         return new ReadyUpdate(version, path);
     }
 
-    private static bool HasPendingDownload(AppSettings settings)
+    private static bool IsDownloading(AppSettings settings)
     {
         var version = settings.PendingUpdateVersion;
         var url = settings.PendingUpdateUrl;
         if (string.IsNullOrWhiteSpace(version) || string.IsNullOrWhiteSpace(url)) return false;
         if (CompareVersions(version, CurrentVersion) <= 0) return false;
-        return !string.Equals(settings.PendingUpdateStatus, "ready", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(settings.PendingUpdateStatus, "downloading", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAvailable(AppSettings settings)
+    {
+        var version = settings.PendingUpdateVersion;
+        var url = settings.PendingUpdateUrl;
+        if (string.IsNullOrWhiteSpace(version) || string.IsNullOrWhiteSpace(url)) return false;
+        if (CompareVersions(version, CurrentVersion) <= 0) return false;
+        return string.Equals(settings.PendingUpdateStatus, "available", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void ClearPending(AppSettings settings)

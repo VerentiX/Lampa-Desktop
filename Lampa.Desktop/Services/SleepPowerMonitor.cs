@@ -5,17 +5,22 @@ using Microsoft.Win32;
 namespace Lampa.Desktop.Services;
 
 /// <summary>
-/// Modern Standby (S0) often never sends PowerModes.Suspend.
-/// Display-off / lid-close are the practical sleep signals; classic S3 is kept as a fallback.
+/// Pause the VPN only when the machine is actually leaving the running state:
+/// classic S3/S4, Modern Standby (S0ix via suspend/resume notification),
+/// or lid-close without an external display.
+/// Display-off, Win+L and session idle (watching a video without mouse) are
+/// not sleep — idle used to kill the core after a few minutes of YouTube.
 /// </summary>
 public sealed class SleepPowerMonitor : IDisposable
 {
     public event Action<bool>? SleepRequested;
     public event Action? WakeRequested;
 
+    // Display is tracked only to distinguish clamshell (lid closed + panel on).
     private static readonly Guid ConsoleDisplayState = new("6FE69556-704A-47A0-8F24-C28D936FDA47");
     private static readonly Guid SessionDisplayStatus = new("2B84C20E-AD23-4DDF-93DB-05FFBD7EFCA5");
-    private static readonly Guid LidSwitchStateChange = new("BA3E0F4D-B817-4094-A2D1-D56379E6AB0D");
+    // winnt.h GUID_LIDSWITCH_STATE_CHANGE
+    private static readonly Guid LidSwitchStateChange = new("BA3E0F4D-B817-4094-A2D1-D56379E6A0F3");
 
     private readonly DeviceNotifyCallbackRoutine _suspendResumeCallback;
     private readonly List<IntPtr> _settingRegistrations = [];
@@ -95,7 +100,7 @@ public sealed class SleepPowerMonitor : IDisposable
 
         if (setting.PowerSetting == ConsoleDisplayState || setting.PowerSetting == SessionDisplayStatus)
         {
-            // 0 off, 1 on, 2 dim — dim is not sleep.
+            // 0 off, 1 on, 2 dim — display-off is not sleep; keep it for lid/clamshell only.
             if (setting.Data == 2) return;
             lock (_gate) _displayOn = setting.Data != 0;
             ScheduleEvaluate();
@@ -111,6 +116,8 @@ public sealed class SleepPowerMonitor : IDisposable
 
     private uint OnSuspendResumeCallback(IntPtr context, uint type, IntPtr setting)
     {
+        // This is the Modern Standby path: WM_POWERBROADCAST often never
+        // arrives for S0ix, but powrprof still delivers PBT_APMSUSPEND.
         if (type == PbtApmSuspend) SetClassicSuspend(true);
         else if (type is PbtApmResumeSuspend or PbtApmResumeAutomatic) SetClassicSuspend(false);
         return 0;
@@ -133,8 +140,7 @@ public sealed class SleepPowerMonitor : IDisposable
         lock (_gate)
         {
             if (_classicSuspend) return true;
-            if (_displayOn == false) return true;
-            // Closed lid with the panel still on is clamshell + external monitor — do not pause.
+            // Closed lid with the panel still on is clamshell + external monitor.
             if (_lidOpen == false && _displayOn != true) return true;
             return false;
         }

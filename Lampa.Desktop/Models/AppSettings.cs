@@ -50,6 +50,12 @@ public sealed class AppSettings
     public long PendingUpdateSize { get; set; }
     public string PendingUpdateSha256 { get; set; } = "";
     public string PendingUpdateStatus { get; set; } = "";
+    /// <summary>none | error | warn | info | debug. Default: warnings and errors.</summary>
+    public string LogLevel { get; set; } = "warn";
+    /// <summary>How long to keep rotated log files. Default three days.</summary>
+    public int LogRetentionHours { get; set; } = 72;
+    /// <summary>Write compact access history (host + outbound) while connected.</summary>
+    public bool AccessLogEnabled { get; set; } = true;
 
     public static string DataDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Lampa");
@@ -64,6 +70,17 @@ public sealed class AppSettings
             if (settings.SubscriptionUpdateHours is < 6 or > 72) settings.SubscriptionUpdateHours = 24;
             if (settings.GeoUpdateDays is < 1 or > 7) settings.GeoUpdateDays = 3;
             if (settings.AppUpdateDays is < 3 or > 30) settings.AppUpdateDays = 7;
+            if (settings.LogLevel is not ("none" or "error" or "warn" or "info" or "debug"))
+                settings.LogLevel = "warn";
+            if (settings.LogRetentionHours is not (1 or 6 or 24 or 72 or 168 or 720))
+                settings.LogRetentionHours = 72;
+            // Previous factory defaults were error + 7 days. Move existing
+            // installs that never changed them onto warn + 3 days.
+            if (settings.LogLevel == "error" && settings.LogRetentionHours == 168)
+            {
+                settings.LogLevel = "warn";
+                settings.LogRetentionHours = 72;
+            }
             // Режим маршрутизации больше не выбирается в интерфейсе.
             settings.UseFullBlockList = true;
             // Старые settings без ключа → новый режим по умолчанию.

@@ -1,5 +1,9 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Security.Principal;
 using System.Threading;
 using System.Windows;
+using Lampa.Desktop.Services;
 
 namespace Lampa.Desktop;
 
@@ -20,6 +24,13 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (!IsAdministrator())
+        {
+            RelaunchElevated(e.Args);
+            Shutdown();
+            return;
+        }
+
         _singleInstance = new Mutex(true, "Lampa.Desktop.SingleInstance", out var created);
         if (!created)
         {
@@ -29,8 +40,14 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
         _shutdownEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShutdownEventName);
         _stoppedEvent = new EventWaitHandle(false, EventResetMode.ManualReset, StoppedEventName);
+        var startInTray = e.Args.Any(arg => arg.Equals("--background", StringComparison.OrdinalIgnoreCase));
         var window = new MainWindow();
         window.Show();
+        if (startInTray)
+        {
+            window.Hide();
+            window.ShowInTaskbar = false;
+        }
         _ = Task.Run(() => WaitForUninstallSignal(window));
     }
 
@@ -40,6 +57,7 @@ public partial class App : System.Windows.Application
         _shutdownEvent?.Dispose();
         _stoppedEvent?.Dispose();
         _singleInstance?.Dispose();
+        try { LogStore.Instance.Flush(); } catch { }
         base.OnExit(e);
     }
 
@@ -66,5 +84,41 @@ public partial class App : System.Windows.Application
         {
             // Lampa is not running.
         }
+    }
+
+    private static bool IsAdministrator()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    }
+
+    private static void RelaunchElevated(string[] args)
+    {
+        try
+        {
+            var start = new ProcessStartInfo
+            {
+                FileName = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName,
+                UseShellExecute = true,
+                Verb = "runas",
+                Arguments = string.Join(' ', args.Select(QuoteArg))
+            };
+            if (string.IsNullOrWhiteSpace(start.FileName)) return;
+            Process.Start(start);
+        }
+        catch (Win32Exception)
+        {
+            // User cancelled the UAC prompt.
+        }
+        catch
+        {
+        }
+    }
+
+    private static string QuoteArg(string value)
+    {
+        if (value.Length == 0) return "\"\"";
+        if (value.IndexOfAny([' ', '\t', '"']) < 0) return value;
+        return "\"" + value.Replace("\"", "\\\"") + "\"";
     }
 }

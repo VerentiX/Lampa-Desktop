@@ -48,11 +48,12 @@ Name: "{autodesktop}\Lampa Desktop"; Filename: "{app}\{#MyAppExeName}"; Tasks: d
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "Lampa"; Flags: uninsdeletevalue
 
 [UninstallRun]
-Filename: "{app}\{#MyAppExeName}"; Parameters: "--shutdown-for-uninstall"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "GracefulShutdown"
-Filename: "{cmd}"; Parameters: "/C taskkill /IM {#MyAppExeName} /T /F >nul 2>&1"; Flags: runhidden waituntilterminated; RunOnceId: "ForcedShutdownFallback"
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--shutdown-for-uninstall"; Flags: runhidden waituntilterminated skipifdoesntexist runascurrentuser; RunOnceId: "GracefulShutdown"
+Filename: "{cmd}"; Parameters: "/C taskkill /IM {#MyAppExeName} /T /F >nul 2>&1"; Flags: runhidden waituntilterminated runascurrentuser; RunOnceId: "ForcedShutdownFallback"
+Filename: "schtasks.exe"; Parameters: "/Delete /TN ""Lampa Desktop"" /F"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveStartupTask"
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Запустить Lampa Desktop"; Verb: "runas"; Flags: shellexec nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Запустить Lampa Desktop"; Flags: nowait postinstall skipifsilent runascurrentuser
 
 [Code]
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

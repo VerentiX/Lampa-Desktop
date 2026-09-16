@@ -23,6 +23,15 @@ foreach (var profile in result.Profiles)
                                 x?["port"]?.GetValue<int>() == 443 &&
                                 x?["action"]?.GetValue<string>() == "reject"))
             throw new Exception("Desktop config must reject QUIC so browsers immediately fall back to TCP");
+        if (!fullRules.Any(x => x?["rule_set"]?.GetValue<string>() == "ads-all" &&
+                                x?["outbound"]?.GetValue<string>() == "block") ||
+            fullP0["route"]?["rule_set"]?.AsArray()
+                .OfType<JsonObject>()
+                .All(x => x["tag"]?.GetValue<string>() != "ads-all") == true)
+            throw new Exception("Desktop config must block geosite category-ads-all");
+        if (fullP0["log"]?["level"]?.GetValue<string>() != "warn" ||
+            fullP0["log"]?["timestamp"]?.GetValue<bool>() != true)
+            throw new Exception("Desktop config must default to warn-level logs");
         if (fullP0["route"]?["final"]?.GetValue<string>() != "direct" ||
             fullP0["dns"]?["final"]?.GetValue<string>() != "dns-direct" ||
             !fullRules.Any(x => x?["rule_set"]?.ToJsonString().Contains("refilter-domains") == true))

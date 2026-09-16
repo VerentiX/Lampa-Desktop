@@ -28,6 +28,8 @@ public partial class MainWindow : Window
     private bool _settingsUiReady;
     private bool _powerClickBusy;
     private bool _updatePromptVisible;
+    private bool _geoBusy;
+    private bool _updateCheckBusy;
     private string _deferredUpdateVersion = "";
     private ConnectionState _renderedState = ConnectionState.Disconnected;
     private List<string> _draftProxyDomains = [];
@@ -73,15 +75,21 @@ public partial class MainWindow : Window
         SubscriptionIntervalSlider.Value = _settings.SubscriptionUpdateHours;
         GeoIntervalSlider.Value = _settings.GeoUpdateDays;
         AppUpdateIntervalSlider.Value = _settings.AppUpdateDays;
+        SelectLogToggles();
+        AccessLogCheck.IsChecked = _settings.AccessLogEnabled;
+        AppVersionText.Text = AppUpdateService.CurrentVersion;
         UpdateIntervalLabels();
+        RenderGeoStatus();
         _settingsUiReady = true;
         _updateTimer.Start();
         _appUpdates.ProgressChanged += ui => Dispatcher.BeginInvoke(async () =>
         {
             RenderUpdateBanner(ui);
+            RenderSettingsUpdateButtons(ui);
             await ShowUpdatePromptIfNeededAsync(ui);
         });
         RenderUpdateBanner(_appUpdates.CurrentUi(_settings));
+        RenderSettingsUpdateButtons(_appUpdates.CurrentUi(_settings));
 
         _tray = new Forms.NotifyIcon { Text = "Lampa Desktop", Icon = AppIconFactory.CreateTrayIcon(AppIconFactory.StatusKind.Idle), Visible = true };
         _tray.DoubleClick += (_, _) => Dispatcher.Invoke(ShowFromTray);
@@ -343,6 +351,7 @@ public partial class MainWindow : Window
         {
             if (silent)
             {
+                LogStore.Instance.WriteApp(AppLogLevel.Warn, $"Не удалось обновить подписку: {ex.Message}");
                 ReloadProfiles();
                 return false;
             }
@@ -385,12 +394,16 @@ public partial class MainWindow : Window
         _settings.WhitelistMode = WhitelistModeCheck.IsChecked == true;
         if (!_settings.WhitelistMode && _settings.ActivePriority >= 5) _settings.ActivePriority = 0;
         ReadIntervalSliders();
+        var previousLevel = _settings.LogLevel;
+        _settings.AccessLogEnabled = AccessLogCheck.IsChecked == true;
         _settings.Save();
+        _connection.NotifyLogSettingsChanged();
         StartupManager.SetEnabled(_settings.StartWithWindows);
         RenderModeToggle();
         RenderRoutePolicy();
         StatusHint.Text = "Настройки сохранены";
-        if (whitelistModeChanged && _isConnected) _ = RestartTunnelAsync();
+        ShowPage("home");
+        if ((whitelistModeChanged || previousLevel != _settings.LogLevel) && _isConnected) _ = RestartTunnelAsync();
     }
 
     private void PauseOnSleepCheck_Changed(object sender, RoutedEventArgs e)
@@ -441,6 +454,7 @@ public partial class MainWindow : Window
     private async Task RunBackgroundUpdatesAsync()
     {
         try { await MaybeRefreshSubscriptionAsync(); } catch { }
+        try { await MaybeRefreshGeoAsync(force: false); } catch { }
         try { await _appUpdates.CheckAndContinueAsync(_settings, ignoreInterval: false, _lifetime.Token); } catch { }
     }
 
@@ -451,6 +465,30 @@ public partial class MainWindow : Window
         if (_settings.LastSubscriptionUpdate is { } last && DateTimeOffset.Now - last < TimeSpan.FromHours(hours))
             return;
         await RefreshSubscriptionAsync(silent: true);
+    }
+
+    private async Task MaybeRefreshGeoAsync(bool force)
+    {
+        var days = Math.Clamp(_settings.GeoUpdateDays, 1, 7);
+        if (!force && _settings.LastGeoUpdate is { } last && DateTimeOffset.Now - last < TimeSpan.FromDays(days))
+            return;
+
+        try
+        {
+            await GeoAssetService.RefreshAsync(_lifetime.Token);
+            _settings.LastGeoUpdate = DateTimeOffset.Now;
+            _settings.Save();
+            LogStore.Instance.WriteApp(AppLogLevel.Info, "Геофайлы маршрутизации обновлены");
+            RenderGeoStatus();
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            LogStore.Instance.WriteApp(AppLogLevel.Warn, $"Не удалось обновить геофайлы: {ex.Message}");
+            RenderGeoStatus($"Не удалось обновить геофайлы: {ex.Message}");
+        }
     }
 
     private static string FormatHours(int hours)
@@ -736,7 +774,59 @@ public partial class MainWindow : Window
         RoutingPage.Visibility = page == "routing" ? Visibility.Visible : Visibility.Collapsed;
         RulesPage.Visibility = page == "rules" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPage.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
+        LogsPage.Visibility = page == "logs" ? Visibility.Visible : Visibility.Collapsed;
+        if (page == "logs") LogsHost.Activate(_settings, _connection.Connections);
+        else LogsHost.Deactivate();
     }
+
+    private void LogLevel_Click(object sender, RoutedEventArgs e)
+    {
+        var level = sender == LogLevelNoneBtn ? "none"
+            : sender == LogLevelWarnBtn ? "warn"
+            : sender == LogLevelInfoBtn ? "info"
+            : sender == LogLevelDebugBtn ? "debug"
+            : "error";
+        var previous = _settings.LogLevel;
+        _settings.LogLevel = level;
+        _settings.Save();
+        _connection.NotifyLogSettingsChanged();
+        SelectLogToggles();
+        if (previous != level && _isConnected) _ = RestartTunnelAsync();
+    }
+
+    private void LogRetention_Click(object sender, RoutedEventArgs e)
+    {
+        var hours = sender == LogKeep1hBtn ? 1
+            : sender == LogKeep6hBtn ? 6
+            : sender == LogKeep1dBtn ? 24
+            : sender == LogKeep3dBtn ? 72
+            : sender == LogKeep30dBtn ? 720
+            : 168;
+        _settings.LogRetentionHours = hours;
+        _settings.Save();
+        _connection.NotifyLogSettingsChanged();
+        SelectLogToggles();
+    }
+
+    private void SelectLogToggles()
+    {
+        SetToggle(LogLevelNoneBtn, _settings.LogLevel == "none");
+        SetToggle(LogLevelErrorBtn, _settings.LogLevel is not "none" and not "warn" and not "info" and not "debug");
+        SetToggle(LogLevelWarnBtn, _settings.LogLevel == "warn");
+        SetToggle(LogLevelInfoBtn, _settings.LogLevel == "info");
+        SetToggle(LogLevelDebugBtn, _settings.LogLevel == "debug");
+        SetToggle(LogKeep1hBtn, _settings.LogRetentionHours == 1);
+        SetToggle(LogKeep6hBtn, _settings.LogRetentionHours == 6);
+        SetToggle(LogKeep1dBtn, _settings.LogRetentionHours == 24);
+        SetToggle(LogKeep3dBtn, _settings.LogRetentionHours == 72);
+        SetToggle(LogKeep7dBtn, _settings.LogRetentionHours is not 1 and not 6 and not 24 and not 72 and not 720);
+        SetToggle(LogKeep30dBtn, _settings.LogRetentionHours == 720);
+    }
+
+    private static void SetToggle(System.Windows.Controls.Button button, bool on) =>
+        button.Tag = on ? "active" : null;
+
+    private void OpenLogs_Click(object sender, RoutedEventArgs e) => ShowPage("logs");
 
     private void HomeNav_Click(object sender, RoutedEventArgs e) => ShowPage("home");
     private void RoutingNav_Click(object sender, RoutedEventArgs e) => ShowPage("routing");
@@ -775,24 +865,32 @@ public partial class MainWindow : Window
     {
         if (_reallyClose) return;
         e.Cancel = true;
+        LogsHost.Deactivate();
         Hide();
         _tray.ShowBalloonTip(1500, "Lampa Desktop", "Приложение продолжает работать в трее", Forms.ToolTipIcon.Info);
     }
 
     private void ShowFromTray()
     {
+        ShowInTaskbar = true;
         Show();
         WindowState = WindowState.Normal;
         Activate();
+        if (LogsPage.Visibility == Visibility.Visible)
+            LogsHost.Activate(_settings, _connection.Connections);
         RenderUpdateBanner(_appUpdates.CurrentUi(_settings));
+        RenderSettingsUpdateButtons(_appUpdates.CurrentUi(_settings));
         _ = _appUpdates.CheckAndContinueAsync(_settings, ignoreInterval: false, _lifetime.Token);
     }
+
+    private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e) => WheelScroll.Handle(e);
 
     private void RenderUpdateBanner(AppUpdateUi ui)
     {
         if (ui.State == AppUpdateUiState.Hidden)
         {
             UpdateBanner.Visibility = Visibility.Collapsed;
+            RenderSettingsUpdateButtons(ui);
             return;
         }
 
@@ -801,11 +899,114 @@ public partial class MainWindow : Window
         UpdateProgressBar.Visibility = ui.State == AppUpdateUiState.Downloading ? Visibility.Visible : Visibility.Collapsed;
         UpdateProgressBar.Value = ui.Percent;
         UpdateInstallBtn.Visibility = ui.CanInstall ? Visibility.Visible : Visibility.Collapsed;
+        UpdateInstallBtn.Content = "Обновить";
+        RenderSettingsUpdateButtons(ui);
+    }
+
+    private void RenderSettingsUpdateButtons(AppUpdateUi ui)
+    {
+        if (CheckAppUpdateBtn is null) return;
+        CheckAppUpdateBtn.IsEnabled = !_updateCheckBusy && ui.State != AppUpdateUiState.Downloading;
+        if (ui.State != AppUpdateUiState.Hidden)
+            AppUpdateStatusText.Text = ui.Message;
+    }
+
+    private void RenderGeoStatus(string? error = null)
+    {
+        if (GeoStatusText is null) return;
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            GeoStatusText.Text = error;
+            return;
+        }
+        var stamp = _settings.LastGeoUpdate ?? GeoAssetService.InferLastUpdate();
+        GeoStatusText.Text = stamp is { } value
+            ? $"Последнее обновление: {value.ToLocalTime():dd.MM.yyyy HH:mm}"
+            : "Списки ещё не обновлялись вручную";
+    }
+
+    private async void CheckAppUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updateCheckBusy) return;
+        _updateCheckBusy = true;
+        CheckAppUpdateBtn.IsEnabled = false;
+        AppUpdateStatusText.Text = "Проверяю обновление…";
+        try
+        {
+            await _appUpdates.CheckAndContinueAsync(_settings, ignoreInterval: true, _lifetime.Token);
+            var ui = _appUpdates.CurrentUi(_settings);
+            RenderUpdateBanner(ui);
+            if (ui.State == AppUpdateUiState.Hidden)
+                AppUpdateStatusText.Text = "Установлена актуальная версия";
+            else if (ui.State == AppUpdateUiState.Ready)
+                await ShowUpdatePromptIfNeededAsync(ui, force: true);
+        }
+        catch (Exception ex)
+        {
+            AppUpdateStatusText.Text = $"Не удалось проверить: {ex.Message}";
+            LogStore.Instance.WriteApp(AppLogLevel.Warn, $"Не удалось проверить обновление приложения: {ex.Message}");
+        }
+        finally
+        {
+            _updateCheckBusy = false;
+            RenderSettingsUpdateButtons(_appUpdates.CurrentUi(_settings));
+        }
+    }
+
+    private async void RefreshGeo_Click(object sender, RoutedEventArgs e)
+    {
+        if (_geoBusy) return;
+        _geoBusy = true;
+        RefreshGeoBtn.IsEnabled = false;
+        GeoStatusText.Text = "Обновляем списки маршрутизации…";
+        var reconnect = _isConnected;
+        try
+        {
+            if (reconnect)
+            {
+                await _connection.DisconnectAsync(false);
+                await Task.Delay(300);
+            }
+            GeoAssetService.InvalidateRuleSetCache();
+            try
+            {
+                await GeoAssetService.RefreshAsync(_lifetime.Token);
+            }
+            catch (Exception ex)
+            {
+                LogStore.Instance.WriteApp(AppLogLevel.Warn, $"Не удалось скачать geo.dat: {ex.Message}");
+            }
+            _settings.LastGeoUpdate = DateTimeOffset.Now;
+            _settings.Save();
+            if (reconnect) await _connection.ConnectAsync();
+            LogStore.Instance.WriteApp(AppLogLevel.Info, "Списки маршрутизации обновлены вручную");
+            RenderGeoStatus();
+            StatusHint.Text = reconnect
+                ? "Списки обновлены, VPN перезапущен"
+                : "Списки обновлены. Новые SRS подтянутся при следующем подключении";
+        }
+        catch (Exception ex)
+        {
+            LogStore.Instance.WriteApp(AppLogLevel.Warn, $"Не удалось обновить списки маршрутизации: {ex.Message}");
+            RenderGeoStatus($"Не удалось обновить списки: {ex.Message}");
+            StatusHint.Text = ex.Message;
+        }
+        finally
+        {
+            _geoBusy = false;
+            RefreshGeoBtn.IsEnabled = true;
+        }
     }
 
     private async void InstallUpdate_Click(object sender, RoutedEventArgs e)
     {
-        await ShowUpdatePromptIfNeededAsync(_appUpdates.CurrentUi(_settings), force: true);
+        var ui = _appUpdates.CurrentUi(_settings);
+        if (ui.State == AppUpdateUiState.Available)
+        {
+            _appUpdates.DownloadPending(_settings);
+            return;
+        }
+        await ShowUpdatePromptIfNeededAsync(ui, force: true);
     }
 
     private async Task ShowUpdatePromptIfNeededAsync(AppUpdateUi ui, bool force = false)

@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Lampa.Desktop.Services;
 
 namespace Lampa.Desktop;
 
@@ -89,6 +90,8 @@ public partial class ProcessPickerWindow : Window
 
         DragMove();
     }
+
+    private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e) => WheelScroll.Handle(e);
 
     private void Minimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     private void Cancel_Click(object sender, RoutedEventArgs e) => DialogResult = false;

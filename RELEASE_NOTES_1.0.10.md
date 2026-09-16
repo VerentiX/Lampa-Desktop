@@ -1,8 +1,14 @@
 # Lampa Desktop 1.0.10
 
-- Bundled core updated to `sing-box-lx 1.14.0-lx.39-custom` while retaining Lampa's active-node checks, priority failback and XHTTP/Xray compatibility fields.
-- Includes upstream REALITY compatibility, nested-selector deadlock and SOCKS5 UDP relay fixes from lx.36–lx.39.
+- Ядро `sing-box-lx 1.14.0-lx.39-custom`: проверки активного узла, failback по приоритету, совместимость XHTTP/Xray. Из lx.36–lx.39 — REALITY, deadlock вложенных selector и SOCKS5 UDP.
+- Журнал в настройках: уровни, срок хранения, история соединений, экспорт. По умолчанию warn и 3 дня; файлы старше срока удаляются целиком.
+- История соединений пишет одну строку на хост раз в минуту, а не каждую параллельную сессию.
+- Установщик и приложение всегда с правами администратора. После установки Lampa стартует уже поднятой. Автозапуск — задача Планировщика с высшими правами.
+- VPN останавливается только на настоящем сне и Modern Standby, не при простое.
+- Прокрутка тачпадом без ускорения.
+- В настройках: проверить обновление приложения (скачивание и установка — через баннер), обновить списки маршрутизации вручную.
+- Версия на домашнем экране, справа сверху. Сохранение настроек возвращает на главный экран.
 
-- Updated the bundled core to `sing-box-lx 1.14.0-lx.35-custom`.
-- Kept Lampa's active-node health checks, priority failback, and XHTTP compatibility changes.
-- Uses the upstream lx.35 fix for the tunnel loop/high-load issue instead of the former local workaround.
+SHA-256 `LampaSetup-1.0.10.exe`:
+
+`6DDBB63A792E236394CEADD87DC61ACD4C0DCBE23C1BEAA437979E63408A2B72`

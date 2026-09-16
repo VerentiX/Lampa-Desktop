@@ -9,7 +9,8 @@
         ResizeMode="CanResize"
         AllowsTransparency="True"
         Background="Transparent"
-        Foreground="White">
+        Foreground="White"
+        PreviewMouseWheel="Window_PreviewMouseWheel">
   <WindowChrome.WindowChrome>
     <WindowChrome CaptionHeight="0"
                   GlassFrameThickness="0"

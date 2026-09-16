@@ -18,6 +18,7 @@ public sealed class ConnectionSupervisor : IDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly System.Threading.Timer _watchdog;
     private readonly SleepPowerMonitor _sleep;
+    private readonly ClashConnectionMonitor _connections;
     private Process? _core;
     private DateTimeOffset _coreStartedAt = DateTimeOffset.MinValue;
     private volatile bool _suspended;
@@ -25,19 +26,20 @@ public sealed class ConnectionSupervisor : IDisposable
     private int _failedHealthChecks;
     private int _resumeGeneration;
     private DateTimeOffset _connectedAt = DateTimeOffset.MinValue;
-    private bool _coreFrozen;
     private string _readyConfigFingerprint = "";
     private string _priorityCandidate = "";
     private int _priorityConfirmations;
-    private readonly object _coreLogLock = new();
     public ConnectionState State { get; private set; }
     public string ActiveRouteName { get; private set; } = "";
+    public ClashConnectionMonitor Connections => _connections;
     public event Action<ConnectionState, string>? StateChanged;
 
     public ConnectionSupervisor(AppSettings settings)
     {
         _settings = settings;
+        LogStore.Instance.ApplySettings(settings);
         _sleep = new SleepPowerMonitor();
+        _connections = new ClashConnectionMonitor(settings);
         _sleep.SleepRequested += OnSleepRequested;
         _sleep.WakeRequested += OnWakeRequested;
         NetworkChange.NetworkAvailabilityChanged += OnNetworkChanged;
@@ -71,12 +73,12 @@ public sealed class ConnectionSupervisor : IDisposable
         try
         {
             if (!_settings.DesiredConnected || _suspended || _disposed) return;
-            if (_coreFrozen) ThawCore();
             if (_core is { HasExited: false } && await IsPortOpenAsync()) {
                 if (_settings.UseTun) SystemProxy.Disable(); else SystemProxy.Enable(_settings.LocalHttpPort);
                 SetState(ConnectionState.Connected, _settings.UseTun ? "Весь трафик защищён через TUN" : "Соединение защищено"); return;
             }
             SetState(recovering ? ConnectionState.Recovering : ConnectionState.Connecting, recovering ? "Восстанавливаем соединение…" : "Подключаемся…");
+            WriteSupervisorLog($"start-core recovering={recovering}", AppLogLevel.Info);
             await Task.Yield();
             StopCore(); SystemProxy.Disable();
             var profile = _settings.Profiles.ElementAtOrDefault(_settings.SelectedProfile) ?? throw new InvalidOperationException("Добавьте подписку и выберите сервер");
@@ -93,7 +95,8 @@ public sealed class ConnectionSupervisor : IDisposable
                 var configJson = await Task.Run(() => SingBoxConfigBuilder.Build(profile, _settings.LocalHttpPort,
                     _settings.UseTun, routing, _settings.BypassApplications, _settings.ActivePriority,
                     _settings.CustomProxyDomains, _settings.CustomDirectDomains, _settings.UseFullBlockList,
-                    _settings.RouteExceptRussia, _settings.GeoUpdateDays, _settings.WhitelistMode)).ConfigureAwait(false);
+                    _settings.RouteExceptRussia, _settings.GeoUpdateDays, _settings.WhitelistMode,
+                    _settings.LogLevel)).ConfigureAwait(false);
                 await File.WriteAllTextAsync(configPath, configJson).ConfigureAwait(false);
                 _readyConfigFingerprint = fingerprint;
             }
@@ -112,6 +115,7 @@ public sealed class ConnectionSupervisor : IDisposable
             if (_settings.UseTun) SystemProxy.Disable(); else SystemProxy.Enable(_settings.LocalHttpPort);
             _connectedAt = DateTimeOffset.Now;
             _failedHealthChecks = 0;
+            _connections.Start();
             SetState(ConnectionState.Connected, recovering ? "TUN-соединение восстановлено" : "Весь трафик защищён через TUN");
         }
         catch (Exception ex) { StopCore(); SystemProxy.Disable(); SetState(ConnectionState.Error, ex.Message); }
@@ -121,25 +125,7 @@ public sealed class ConnectionSupervisor : IDisposable
     private void OnCoreLog(object sender, DataReceivedEventArgs e)
     {
         if (string.IsNullOrEmpty(e.Data)) return;
-        try
-        {
-            lock (_coreLogLock)
-            {
-                var logPath = Path.Combine(AppSettings.DataDirectory, "core.log");
-                var backupPath = Path.Combine(AppSettings.DataDirectory, "core.log.old");
-                // Builds predating the 1 MB rotation limit may have left a
-                // very large backup behind.  Remove it immediately instead
-                // of waiting until the current log fills up again.
-                if (File.Exists(backupPath) && new FileInfo(backupPath).Length > 1 * 1024 * 1024)
-                    File.Delete(backupPath);
-                if (File.Exists(logPath) && new FileInfo(logPath).Length >= 1 * 1024 * 1024)
-                {
-                    File.Move(logPath, backupPath, true);
-                }
-                File.AppendAllText(logPath, e.Data + Environment.NewLine);
-            }
-        }
-        catch { }
+        LogStore.Instance.WriteCore(e.Data);
 
         var match = Regex.Match(e.Data, @"\[(?:auto-proxy-in|chain-in-s\d+)\s*->\s*route-p0*(\d+)", RegexOptions.IgnoreCase);
         if (!match.Success || !int.TryParse(match.Groups[1].Value, out var priority)) return;
@@ -148,7 +134,7 @@ public sealed class ConnectionSupervisor : IDisposable
 
     private async Task WatchdogAsync()
     {
-        if (!_settings.DesiredConnected || !_settings.AutoReconnect || _suspended || _coreFrozen) return;
+        if (!_settings.DesiredConnected || !_settings.AutoReconnect || _suspended) return;
         // Грейс-период после запуска core, чтобы watchdog не рестартил sing-box
         // пока он ещё "прогревается" (инициализация tun/обмен с сетью).
         if (_coreStartedAt > DateTimeOffset.MinValue &&
@@ -156,6 +142,7 @@ public sealed class ConnectionSupervisor : IDisposable
         if (_connectedAt > DateTimeOffset.MinValue && DateTimeOffset.Now - _connectedAt < TimeSpan.FromSeconds(45)) return;
         if (await RefreshActivePriorityAsync())
         {
+            WriteSupervisorLog($"watchdog-restart reason=priority-change route={ActiveRouteName} p={_settings.ActivePriority}", AppLogLevel.Warn);
             await DisconnectAsync(false);
             await EnsureConnectedAsync(true);
             return;
@@ -164,6 +151,7 @@ public sealed class ConnectionSupervisor : IDisposable
         var tunnelDead = !processDead && !await IsTunnelHealthyAsync();
         _failedHealthChecks = tunnelDead ? _failedHealthChecks + 1 : 0;
         if (processDead || _failedHealthChecks >= 5) {
+            WriteSupervisorLog($"watchdog-restart reason={(processDead ? "process-or-port-dead" : "health-fail-x5")} failedHealth={_failedHealthChecks} pid={_core?.Id}", AppLogLevel.Error);
             _failedHealthChecks = 0;
             await DisconnectAsync(false); await EnsureConnectedAsync(true);
         }
@@ -209,27 +197,32 @@ public sealed class ConnectionSupervisor : IDisposable
 
     private void OnSleepRequested(bool classicSuspend)
     {
+        WriteSupervisorLog($"sleep-requested classic={classicSuspend} pauseOnSleep={_settings.PauseVpnOnSleep}", AppLogLevel.Info);
         if (!classicSuspend && !_settings.PauseVpnOnSleep) return;
-        _ = PauseForSleepAsync();
+        _ = PauseForSleepAsync(classicSuspend);
     }
 
-    private async Task PauseForSleepAsync()
+    private async Task PauseForSleepAsync(bool classicSuspend)
     {
         Interlocked.Increment(ref _resumeGeneration);
         _suspended = true;
         await _gate.WaitAsync();
         try
         {
-            if (!FreezeCore()) StopCore();
+            // Kill the core instead of NtSuspendProcess: a frozen TUN keeps
+            // WinTun/urltest runnable and blocks Modern Standby (S0ix).
+            WriteSupervisorLog($"pause-for-sleep classic={classicSuspend} pid={_core?.Id}", AppLogLevel.Warn);
+            StopCore();
             SystemProxy.Disable();
             if (_settings.DesiredConnected && !_disposed)
-                SetState(ConnectionState.Paused, "VPN усыплён, правила остаются в памяти");
+                SetState(ConnectionState.Paused, "VPN остановлен на время сна");
         }
         finally { _gate.Release(); }
     }
 
     private void OnWakeRequested()
     {
+        WriteSupervisorLog($"wake-requested suspended={_suspended}", AppLogLevel.Info);
         if (!_suspended) return;
         _ = ResumeAsync(fromSleep: true);
     }
@@ -245,10 +238,7 @@ public sealed class ConnectionSupervisor : IDisposable
             await _gate.WaitAsync();
             try
             {
-                ThawCore();
                 _suspended = false;
-                _coreStartedAt = DateTimeOffset.Now;
-                _connectedAt = DateTimeOffset.Now;
                 _failedHealthChecks = 0;
             }
             finally { _gate.Release(); }
@@ -263,24 +253,6 @@ public sealed class ConnectionSupervisor : IDisposable
         if (_suspended || _disposed || generation != _resumeGeneration) return;
         await Task.Delay(fromSleep ? 400 : 1500);
         if (_suspended || _disposed || generation != _resumeGeneration) return;
-
-        if (fromSleep && _core is { HasExited: false })
-        {
-            for (var i = 0; i < 20; i++)
-            {
-                if (_suspended || _disposed || generation != _resumeGeneration) return;
-                if (await IsPortOpenAsync())
-                {
-                    if (_settings.UseTun) SystemProxy.Disable(); else SystemProxy.Enable(_settings.LocalHttpPort);
-                    _coreStartedAt = DateTimeOffset.Now;
-                    _connectedAt = DateTimeOffset.Now;
-                    _failedHealthChecks = 0;
-                    SetState(ConnectionState.Connected, "VPN проснулся");
-                    return;
-                }
-                await Task.Delay(150);
-            }
-        }
         await EnsureConnectedAsync(true);
     }
 
@@ -330,34 +302,14 @@ public sealed class ConnectionSupervisor : IDisposable
             _settings.RouteExceptRussia,
             _settings.WhitelistMode,
             _settings.GeoUpdateDays,
+            _settings.LogLevel,
             string.Join(',', _settings.BypassApplications),
             string.Join(',', _settings.CustomProxyDomains),
             string.Join(',', _settings.CustomDirectDomains));
 
-    private bool FreezeCore()
-    {
-        if (_core is null || _core.HasExited) return false;
-        if (_coreFrozen) return true;
-        if (!ProcessSuspender.Suspend(_core.Id)) return false;
-        _coreFrozen = true;
-        return true;
-    }
-
-    private void ThawCore()
-    {
-        if (!_coreFrozen) return;
-        try
-        {
-            if (_core is { HasExited: false })
-                ProcessSuspender.Resume(_core.Id);
-        }
-        catch { }
-        _coreFrozen = false;
-    }
-
     private void StopCore()
     {
-        ThawCore();
+        _connections.Stop();
         try { if (_core is { HasExited: false }) { _core.Kill(true); _core.WaitForExit(2000); } } catch { }
         _core?.Dispose(); _core = null;
         _coreStartedAt = DateTimeOffset.MinValue;
@@ -391,6 +343,15 @@ public sealed class ConnectionSupervisor : IDisposable
         }
     }
     private void SetState(ConnectionState state, string message) { State = state; StateChanged?.Invoke(state, message); }
+
+    private static void WriteSupervisorLog(string message, AppLogLevel level = AppLogLevel.Info) =>
+        LogStore.Instance.WriteApp(level, message);
+
+    public void NotifyLogSettingsChanged()
+    {
+        LogStore.Instance.ApplySettings(_settings);
+        _connections.RefreshMode();
+    }
     public void Dispose()
     {
         _disposed = true;
@@ -399,6 +360,7 @@ public sealed class ConnectionSupervisor : IDisposable
         _sleep.Dispose();
         NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
         _watchdog.Dispose();
+        _connections.Dispose();
         StopCore();
         _gate.Dispose();
     }
