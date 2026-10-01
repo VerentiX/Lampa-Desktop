@@ -42,8 +42,8 @@ public static class CoreConfigBuilder
             },
             outbounds = new object[] { outbound, new { tag = "direct", protocol = "freedom", settings = new { } } }
         };
-        var json = JsonSerializer.Serialize(config);
-        return useTun ? JsonSerializer.Serialize(AddTunInbound(JsonNode.Parse(json)!.AsObject())) : json;
+        var json = JsonSerializer.Serialize(config, JsonText.Compact);
+        return useTun ? JsonText.Write(AddTunInbound(JsonNode.Parse(json)!.AsObject()), indented: false) : json;
     }
 
     private static string PrepareManagedConfig(string json, int httpPort, bool useTun,
@@ -77,7 +77,7 @@ public static class CoreConfigBuilder
         TweakBurstObservatory(root);
 
         if (useTun) AddTunInbound(root);
-        return JsonSerializer.Serialize(root);
+        return JsonText.Write(root, indented: false);
     }
 
     private static void DeduplicateLocalInbounds(JsonArray inbounds)

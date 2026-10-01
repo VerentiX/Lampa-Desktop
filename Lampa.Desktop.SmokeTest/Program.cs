@@ -22,7 +22,9 @@ foreach (var profile in result.Profiles)
         if (!fullRules.Any(x => x?["network"]?.GetValue<string>() == "udp" &&
                                 x?["port"]?.GetValue<int>() == 443 &&
                                 x?["action"]?.GetValue<string>() == "reject"))
-            throw new Exception("Desktop config must reject QUIC so browsers immediately fall back to TCP");
+            throw new Exception("Desktop config must reject QUIC by default");
+        if (fullP0["route"]!["rules"]!.AsArray()[0]?["timeout"]?.GetValue<string>() != "100ms")
+            throw new Exception("Desktop config must sniff with a 100ms timeout");
         if (!fullRules.Any(x => x?["rule_set"]?.GetValue<string>() == "ads-all" &&
                                 x?["outbound"]?.GetValue<string>() == "block") ||
             fullP0["route"]?["rule_set"]?.AsArray()
@@ -41,6 +43,17 @@ foreach (var profile in result.Profiles)
         if (resolveIndex <= 0 || !fullRules.Skip(resolveIndex + 1)
                 .Any(x => x?["rule_set"]?.ToJsonString().Contains("refilter-ips") == true))
             throw new InvalidOperationException("IPIfNonMatch retry pass was not generated.");
+
+        var custom = JsonNode.Parse(SingBoxConfigBuilder.Build(profile, 10809, true, result.Metadata.ProfileRouting,
+            [], 0, ["https://iditena.org:443/path", "2ip.ua"], [], true, true))!.AsObject();
+        var customSuffix = custom["route"]!["rules"]!.AsArray()
+            .Select(x => x?["domain_suffix"]?.ToJsonString() ?? "")
+            .FirstOrDefault(x => x.Contains("iditena.org"));
+        if (customSuffix is null || !customSuffix.Contains("\"iditena.org\"") || customSuffix.Contains("https://"))
+            throw new Exception("Custom proxy domains must be stored as host suffixes");
+        if (custom["dns"]!["rules"]!.AsArray()
+            .All(x => x?["domain_suffix"]?.ToJsonString().Contains("iditena.org") != true))
+            throw new Exception("Custom proxy domains must use tunnel DNS");
 
         var fastP0 = JsonNode.Parse(SingBoxConfigBuilder.Build(profile, 10809, true, result.Metadata.ProfileRouting,
             [], 0, useFullBlockList: false, routeExceptRussia: true))!.AsObject();

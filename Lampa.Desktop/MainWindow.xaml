@@ -742,7 +742,7 @@
       </StackPanel>
     </ScrollViewer>
       <TextBlock x:Name="AppVersionText"
-                 Text="1.0.10"
+                 Text="1.0.15"
                  Foreground="#668EB5D2"
                  FontSize="12"
                  HorizontalAlignment="Right"
@@ -1113,6 +1113,11 @@
           <Border Style="{StaticResource SettingsCard}">
             <StackPanel>
               <TextBlock Text="Обновление приложения" Foreground="White" FontSize="15" FontWeight="SemiBold" />
+              <TextBlock Text="Когда установщик уже скачан, окно появляется при каждом запуске, а уведомление в трее повторяется с этим интервалом"
+                         Foreground="#99FFFFFF"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,8" />
               <TextBlock x:Name="AppUpdateIntervalLabel"
                          Text="Каждые 7 дней"
                          Foreground="#99FFFFFF"

@@ -1,5 +1,5 @@
 #define MyAppName "Lampa Desktop"
-#define MyAppVersion "1.0.10"
+#define MyAppVersion "1.0.15"
 #define MyAppPublisher "Lampa"
 #define MyAppExeName "Lampa.exe"
 

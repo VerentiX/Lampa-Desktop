@@ -86,6 +86,8 @@ public partial class MainWindow : Window
         {
             RenderUpdateBanner(ui);
             RenderSettingsUpdateButtons(ui);
+            if (ui.State == AppUpdateUiState.Ready)
+                RemindReadyUpdate();
             await ShowUpdatePromptIfNeededAsync(ui);
         });
         RenderUpdateBanner(_appUpdates.CurrentUi(_settings));
@@ -93,6 +95,11 @@ public partial class MainWindow : Window
 
         _tray = new Forms.NotifyIcon { Text = "Lampa Desktop", Icon = AppIconFactory.CreateTrayIcon(AppIconFactory.StatusKind.Idle), Visible = true };
         _tray.DoubleClick += (_, _) => Dispatcher.Invoke(ShowFromTray);
+        _tray.BalloonTipClicked += (_, _) => Dispatcher.BeginInvoke(async () =>
+        {
+            ShowFromTray();
+            await ShowUpdatePromptIfNeededAsync(_appUpdates.CurrentUi(_settings), force: true);
+        });
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("Открыть", null, (_, _) => Dispatcher.Invoke(ShowFromTray));
         menu.Items.Add("Подключить", null, async (_, _) => await _connection.ConnectAsync());
@@ -127,8 +134,12 @@ public partial class MainWindow : Window
     private void AddCustomRule(bool isProxy)
     {
         var box = isProxy ? CustomProxyHostBox : CustomDirectHostBox;
-        var host = NormalizeHost(box.Text);
-        if (string.IsNullOrWhiteSpace(host)) return;
+        var host = SingBoxConfigBuilder.NormalizeDomain(box.Text);
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            StatusHint.Text = "Некорректный адрес";
+            return;
+        }
 
         var list = isProxy ? _draftProxyDomains : _draftDirectDomains;
         if (!list.Any(x => string.Equals(x, host, StringComparison.OrdinalIgnoreCase)))
@@ -217,27 +228,11 @@ public partial class MainWindow : Window
         left.Count == right.Count &&
         left.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(right);
 
-    private static string NormalizeHost(string? input)
-    {
-        if (string.IsNullOrWhiteSpace(input)) return "";
-        var v = input.Trim();
-
-        if (v.Contains("://", StringComparison.OrdinalIgnoreCase))
-        {
-            try { v = new Uri(v).Host; } catch { }
-        }
-
-        v = v.Split('/')[0].Split('?')[0].Split('#')[0];
-        v = v.Trim().Trim('.');
-        return v.ToLowerInvariant();
-    }
-
     private async Task RestartTunnelAsync()
     {
         try
         {
-            await _connection.DisconnectAsync(false);
-            await _connection.ConnectAsync();
+            await _connection.ReloadAsync();
         }
         catch (Exception ex)
         {
@@ -617,7 +612,8 @@ public partial class MainWindow : Window
     private void RenderState(ConnectionState state, string message)
     {
         var active = state == ConnectionState.Connected;
-        _isConnected = active;
+        var sessionUp = state is ConnectionState.Connected or ConnectionState.Connecting or ConnectionState.Recovering;
+        _isConnected = sessionUp;
         StatusBadgeText.Text = state switch
         {
             ConnectionState.Connected => ":: ПОДКЛЮЧЕНО ::",
@@ -651,10 +647,11 @@ public partial class MainWindow : Window
             ? AppIconFactory.StatusKind.Error
             : active ? AppIconFactory.StatusKind.Connected : AppIconFactory.StatusKind.Idle);
 
-        if (active)
+        if (sessionUp)
         {
             _connectedSince ??= DateTimeOffset.Now;
             _connectionTimer.Start();
+            PortBox.Text = _settings.LocalHttpPort.ToString();
         }
         else
         {
@@ -684,11 +681,14 @@ public partial class MainWindow : Window
 
     private void UpdateConnectionTimer()
     {
+        var route = !string.IsNullOrWhiteSpace(_connection.ActiveRouteName)
+            ? _connection.ActiveRouteName
+            : _settings.LastProxyOutbound;
         SettingsCurrentConnectionText.Text = !_isConnected
             ? "Не подключено"
-            : string.IsNullOrWhiteSpace(_connection.ActiveRouteName)
+            : string.IsNullOrWhiteSpace(route)
                 ? $"Подключено · P{_settings.ActivePriority}"
-                : $"Подключено · {_connection.ActiveRouteName}";
+                : $"Подключено · {route}";
         if (_connectedSince is null) return;
         var elapsed = DateTimeOffset.Now - _connectedSince.Value;
         ConnectionTimerText.Text = $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
@@ -1029,6 +1029,28 @@ public partial class MainWindow : Window
         {
             _updatePromptVisible = false;
         }
+    }
+
+    /// <summary>
+    /// A downloaded installer stays on disk until it is installed. The dialog
+    /// appears on every process start; the tray balloon repeats on the same
+    /// interval as the update check.
+    /// </summary>
+    private void RemindReadyUpdate()
+    {
+        var version = _settings.PendingUpdateVersion;
+        if (string.IsNullOrWhiteSpace(version)) return;
+        var days = Math.Clamp(_settings.AppUpdateDays, 3, 30);
+        if (_settings.LastUpdateReminder is { } last &&
+            DateTimeOffset.Now - last < TimeSpan.FromDays(days))
+            return;
+        _settings.LastUpdateReminder = DateTimeOffset.Now;
+        _settings.Save();
+        _tray.ShowBalloonTip(
+            8000,
+            "Обновление Lampa",
+            $"Версия {version} уже скачана. Нажмите, чтобы установить.",
+            Forms.ToolTipIcon.Info);
     }
 
     private async Task InstallReadyUpdateAsync()

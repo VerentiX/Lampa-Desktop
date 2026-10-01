@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using System.Text.Json.Nodes;
+using Lampa.Desktop.Models;
 
 namespace Lampa.Desktop.Services;
 
@@ -15,14 +16,14 @@ public static class RoutingBundle
         if (defaultProfile is null || whitelistProfile is null)
             throw new InvalidOperationException("Не найдены встроенные профили маршрутизации. Переустановите Lampa VPN.");
         exceptRuProfile ??= defaultProfile.DeepClone()!.AsObject();
-        return new JsonObject
+        return JsonText.Write(new JsonObject
         {
             ["whitelistMinPriority"] = 5,
             ["default"] = defaultProfile,
             ["exceptRu"] = exceptRuProfile,
             ["full"] = exceptRuProfile.DeepClone(),
             ["whitelist"] = whitelistProfile
-        }.ToJsonString();
+        });
     }
 
     public static string Resolve(string? profileRouting, string? happRouting = null)
@@ -44,7 +45,7 @@ public static class RoutingBundle
             if (fresh["whitelist"] is JsonObject w) stored["whitelist"] = w.DeepClone();
             if (fresh["full"] is JsonObject f) stored["full"] = f.DeepClone();
             if (fresh["whitelistMinPriority"] is JsonNode p) stored["whitelistMinPriority"] = p.DeepClone();
-            return stored.ToJsonString();
+            return JsonText.Write(stored);
         }
         catch { return Bundled(); }
     }
@@ -87,7 +88,7 @@ public static class RoutingBundle
                 bundled["default"] = profile;
                 bundled["full"] = profile.DeepClone();
             }
-            return bundled.ToJsonString();
+            return JsonText.Write(bundled);
         }
         catch { return null; }
     }

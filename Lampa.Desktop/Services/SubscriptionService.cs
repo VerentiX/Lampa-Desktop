@@ -1,6 +1,5 @@
 using System.Net.Http;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.IO;
 using Lampa.Desktop.Models;
@@ -91,7 +90,7 @@ public sealed class SubscriptionService
                     new ProxyProfile
                     {
                         Name = "Автовыбор",
-                        ConfigJson = outbounds.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
+                        ConfigJson = JsonText.Write(outbounds)
                     }
                 ];
             }
@@ -101,7 +100,7 @@ public sealed class SubscriptionService
                 if (config["inbounds"] is null || config["outbounds"] is null || config["routing"] is null) return null;
                 return new ProxyProfile {
                     Name = config["remarks"]?.GetValue<string>() ?? $"Автоконфиг {index + 1}",
-                    ConfigJson = config.ToJsonString(new JsonSerializerOptions { WriteIndented = true })
+                    ConfigJson = JsonText.Write(config)
                 };
             }).Where(x => x is not null).Cast<ProxyProfile>().ToList();
         }

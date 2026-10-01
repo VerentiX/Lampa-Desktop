@@ -13,6 +13,7 @@ public sealed class AppSettings
     public bool PauseVpnOnSleep { get; set; } = true;
     public bool UseTun { get; set; } = true;
     public int LocalHttpPort { get; set; } = 10809;
+    public int ClashApiPort { get; set; } = 19090;
     // Пользовательские доменные правила для маршрутизации.
     // Добавляются поверх базового routing (выше catch-all).
     public List<string> CustomProxyDomains { get; set; } = [];
@@ -43,8 +44,12 @@ public sealed class AppSettings
     public bool RouteExceptRussia { get; set; } = true;
     /// <summary>Enables P5+ routes intended for restricted white-list networks.</summary>
     public bool WhitelistMode { get; set; }
+    /// <summary>Last urltest/selector leaf used while connected.</summary>
+    public string LastProxyOutbound { get; set; } = "";
     public int AppUpdateDays { get; set; } = 7;
     public DateTimeOffset? LastAppUpdateCheck { get; set; }
+    /// <summary>Last tray reminder that a downloaded installer is still waiting.</summary>
+    public DateTimeOffset? LastUpdateReminder { get; set; }
     public string PendingUpdateVersion { get; set; } = "";
     public string PendingUpdateUrl { get; set; } = "";
     public long PendingUpdateSize { get; set; }
@@ -66,7 +71,7 @@ public sealed class AppSettings
         try
         {
             var text = File.ReadAllText(SettingsPath);
-            var settings = JsonSerializer.Deserialize<AppSettings>(text) ?? new();
+            var settings = JsonSerializer.Deserialize<AppSettings>(text, JsonText.Indented) ?? new();
             if (settings.SubscriptionUpdateHours is < 6 or > 72) settings.SubscriptionUpdateHours = 24;
             if (settings.GeoUpdateDays is < 1 or > 7) settings.GeoUpdateDays = 3;
             if (settings.AppUpdateDays is < 3 or > 30) settings.AppUpdateDays = 7;
@@ -88,6 +93,8 @@ public sealed class AppSettings
                 settings.RouteExceptRussia = true;
             if (settings.CorePath.EndsWith("xray.exe", StringComparison.OrdinalIgnoreCase))
                 settings.CorePath = "core\\sing-box.exe";
+            if (settings.LocalHttpPort is <= 1024 or >= 65534) settings.LocalHttpPort = 10809;
+            if (settings.ClashApiPort is <= 1024 or >= 65534) settings.ClashApiPort = 19090;
             return settings;
         }
         catch { return new(); }
@@ -96,7 +103,7 @@ public sealed class AppSettings
     public void Save()
     {
         Directory.CreateDirectory(DataDirectory);
-        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, JsonText.Indented));
     }
 }
 

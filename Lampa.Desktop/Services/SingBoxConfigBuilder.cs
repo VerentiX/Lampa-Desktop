@@ -1,4 +1,5 @@
-using System.Text.Json;
+using System.Globalization;
+using System.Net;
 using System.Text.Json.Nodes;
 using System.IO;
 using Lampa.Desktop.Models;
@@ -14,13 +15,16 @@ public static class SingBoxConfigBuilder
         string profileRouting = "", IReadOnlyCollection<string>? bypassApplications = null, int activePriority = 0,
         IReadOnlyCollection<string>? customProxyDomains = null, IReadOnlyCollection<string>? customDirectDomains = null,
         bool useFullBlockList = true, bool routeExceptRussia = false, int ruleSetUpdateDays = 3,
-        bool whitelistMode = false, string logLevel = "warn")
+        bool whitelistMode = false, string logLevel = "warn",
+        string lastProxyOutbound = "", int clashApiPort = 19090)
     {
         var effectivePriority = whitelistMode ? activePriority : Math.Min(activePriority, 4);
         var outbounds = ReadOutbounds(profile);
         NormalizeOutbounds(outbounds);
+        TuneUrlTest(outbounds);
         if (!whitelistMode) RemoveWhitelistPriorityOutbounds(outbounds);
         EnsureSystemOutbounds(outbounds);
+        PreferLastOutbound(outbounds, lastProxyOutbound);
 
         var root = new JsonObject
         {
@@ -40,7 +44,7 @@ public static class SingBoxConfigBuilder
             {
                 ["clash_api"] = new JsonObject
                 {
-                    ["external_controller"] = "127.0.0.1:19090",
+                    ["external_controller"] = $"127.0.0.1:{(clashApiPort is > 1024 and < 65534 ? clashApiPort : 19090)}",
                     ["secret"] = "lampa"
                 },
                 ["cache_file"] = new JsonObject
@@ -51,7 +55,7 @@ public static class SingBoxConfigBuilder
                 }
             }
         };
-        return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        return JsonText.Write(root);
     }
 
     private static void RemoveWhitelistPriorityOutbounds(JsonArray outbounds)
@@ -141,16 +145,7 @@ public static class SingBoxConfigBuilder
         {
             var suppliedGroup = outbounds.OfType<JsonObject>().FirstOrDefault(IsGroup);
             if (suppliedGroup is not null)
-            {
                 suppliedGroup["tag"] = ProxyTag;
-                if (suppliedGroup["type"]?.GetValue<string>() == "urltest")
-                {
-                    suppliedGroup["interval"] = "15m";
-                    suppliedGroup["active_check_interval"] = "30s";
-                    suppliedGroup["active_check_failures"] = 2;
-                    suppliedGroup["interrupt_exist_connections"] = false;
-                }
-            }
             else
             {
                 outbounds.Add(new JsonObject
@@ -158,11 +153,49 @@ public static class SingBoxConfigBuilder
                     ["type"] = "urltest", ["tag"] = ProxyTag,
                     ["outbounds"] = new JsonArray(leaves.Select(x => (JsonNode?)x).ToArray()),
                     ["url"] = "https://www.gstatic.com/generate_204",
-                    ["interval"] = "15m", ["active_check_interval"] = "30s",
-                    ["active_check_failures"] = 2, ["tolerance"] = 50,
+                    ["tolerance"] = 50,
                     ["interrupt_exist_connections"] = false
                 });
             }
+        }
+    }
+
+    private static void TuneUrlTest(JsonArray outbounds)
+    {
+        foreach (var outbound in outbounds.OfType<JsonObject>())
+        {
+            if (outbound["type"]?.GetValue<string>() != "urltest") continue;
+            outbound["interval"] = "15m";
+            outbound["active_check_interval"] = "30s";
+            outbound["active_check_failures"] = 2;
+            outbound["interrupt_exist_connections"] = false;
+            if (outbound["url"] is null)
+                outbound["url"] = "https://www.gstatic.com/generate_204";
+        }
+    }
+
+    private static void PreferLastOutbound(JsonArray outbounds, string last)
+    {
+        if (string.IsNullOrWhiteSpace(last)) return;
+        foreach (var group in outbounds.OfType<JsonObject>().Where(IsGroup))
+        {
+            if (group["outbounds"] is not JsonArray members) continue;
+            var tags = members.OfType<JsonValue>()
+                .Select(value => value.TryGetValue<string>(out var tag) ? tag : "")
+                .Where(tag => tag.Length > 0)
+                .ToList();
+            if (!tags.Exists(tag => string.Equals(tag, last, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            members.Clear();
+            members.Add(last);
+            foreach (var tag in tags)
+            {
+                if (!string.Equals(tag, last, StringComparison.OrdinalIgnoreCase))
+                    members.Add(tag);
+            }
+            if (group["type"]?.GetValue<string>() == "selector")
+                group["default"] = last;
         }
     }
 
@@ -228,8 +261,7 @@ public static class SingBoxConfigBuilder
         if (selectiveFullRouting)
         {
             var dnsRules = new JsonArray();
-            var custom = customProxyDomains.Select(NormalizeDomain).Where(x => x.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            var custom = NormalizeHostList(customProxyDomains);
             if (custom.Length > 0)
                 dnsRules.Add(new JsonObject
                 {
@@ -254,7 +286,9 @@ public static class SingBoxConfigBuilder
         };
         if (useTun)
         {
-            result.Insert(0, new JsonObject
+            // Mixed must bind first. If Windows reserved the local port, fail
+            // before the TUN adapter is created.
+            result.Add(new JsonObject
             {
                 ["type"] = "tun", ["tag"] = "tun-in", ["interface_name"] = "Lampa",
                 ["address"] = new JsonArray("172.19.0.1/30"),
@@ -273,13 +307,10 @@ public static class SingBoxConfigBuilder
         var selectiveFullRouting = useFullBlockList && !p5;
         var rules = new JsonArray
         {
-            new JsonObject { ["action"] = "sniff", ["timeout"] = "300ms" },
-            new JsonObject { ["protocol"] = "dns", ["action"] = "hijack-dns" },
-            // Force browsers to fall back immediately to HTTP/2 over TCP.  On
-            // networks where UDP/443 is filtered, a QUIC attempt otherwise
-            // stalls before the browser retries the same request over TCP.
-            new JsonObject { ["network"] = "udp", ["port"] = 443, ["action"] = "reject" }
+            new JsonObject { ["action"] = "sniff", ["timeout"] = "100ms" },
+            new JsonObject { ["protocol"] = "dns", ["action"] = "hijack-dns" }
         };
+        rules.Add(new JsonObject { ["network"] = "udp", ["port"] = 443, ["action"] = "reject" });
         rules.Add(new JsonObject { ["rule_set"] = "ads-all", ["outbound"] = "block" });
         AddDomainRule(rules, customProxyDomains, ProxyTag);
         AddDomainRule(rules, customDirectDomains, "direct");
@@ -358,17 +389,46 @@ public static class SingBoxConfigBuilder
 
     private static void AddDomainRule(JsonArray rules, IEnumerable<string> domains, string outbound)
     {
-        var values = domains.Select(NormalizeDomain).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var values = NormalizeHostList(domains);
         if (values.Length == 0) return;
         rules.Add(new JsonObject { ["domain_suffix"] = new JsonArray(values.Select(x => (JsonNode?)x).ToArray()), ["outbound"] = outbound });
     }
 
-    private static string NormalizeDomain(string value)
+    private static string[] NormalizeHostList(IEnumerable<string> domains) =>
+        domains.Select(NormalizeDomain).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+    internal static string NormalizeDomain(string? value)
     {
-        value = value.Trim();
-        var colon = value.IndexOf(':');
-        if (colon >= 0) value = value[(colon + 1)..];
-        return value.Trim().Trim('.').ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var host = value.Trim();
+        if (host.Contains("://", StringComparison.OrdinalIgnoreCase))
+        {
+            try { host = new Uri(host).Host; } catch { }
+        }
+        host = host.Split('/')[0].Split('?')[0].Split('#')[0].Trim().Trim('.');
+        if (!host.StartsWith('[') && host.Count(c => c == ':') == 1)
+        {
+            var colon = host.LastIndexOf(':');
+            if (colon > 0 && host[(colon + 1)..].All(char.IsDigit))
+                host = host[..colon];
+        }
+        host = host.Trim('.').ToLowerInvariant();
+        try { if (host.Length > 0) host = new IdnMapping().GetAscii(host); } catch { return ""; }
+        return IsUsableHost(host) ? host : "";
+    }
+
+    private static bool IsUsableHost(string host)
+    {
+        if (host.Length is < 1 or > 253) return false;
+        if (IPAddress.TryParse(host, out _)) return true;
+        if (!host.Contains('.')) return false;
+        foreach (var label in host.Split('.'))
+        {
+            if (label.Length is 0 or > 63) return false;
+            if (label.StartsWith('-') || label.EndsWith('-')) return false;
+            if (!label.All(c => char.IsAsciiLetterOrDigit(c) || c == '-')) return false;
+        }
+        return true;
     }
 
     private static JsonArray FullProxyDomainRuleSets() => new(

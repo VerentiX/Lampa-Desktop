@@ -29,8 +29,12 @@ public sealed class ConnectionSupervisor : IDisposable
     private string _readyConfigFingerprint = "";
     private string _priorityCandidate = "";
     private int _priorityConfirmations;
+    private DateTimeOffset _lastStartAttempt = DateTimeOffset.MinValue;
+    private int _consecutiveStartFails;
+    private readonly List<string> _recentCoreErrors = [];
     public ConnectionState State { get; private set; }
     public string ActiveRouteName { get; private set; } = "";
+    private string ClashApiRoot => $"http://127.0.0.1:{(_settings.ClashApiPort is > 1024 and < 65534 ? _settings.ClashApiPort : 19090)}";
     public ClashConnectionMonitor Connections => _connections;
     public event Action<ConnectionState, string>? StateChanged;
 
@@ -53,6 +57,25 @@ public sealed class ConnectionSupervisor : IDisposable
         _settings.Save();
         return EnsureConnectedAsync(false);
     }
+
+    public async Task ReloadAsync()
+    {
+        _suspended = false;
+        _settings.DesiredConnected = true;
+        _settings.Save();
+        _readyConfigFingerprint = "";
+        await _gate.WaitAsync();
+        try
+        {
+            SetState(ConnectionState.Recovering, "Обновляем маршруты…");
+            StopCore();
+            SystemProxy.Disable();
+        }
+        finally { _gate.Release(); }
+        if (_settings.UseTun) await Task.Delay(1200);
+        await EnsureConnectedAsync(true);
+    }
+
     public async Task DisconnectAsync(bool userInitiated = true)
     {
         if (userInitiated)
@@ -79,53 +102,121 @@ public sealed class ConnectionSupervisor : IDisposable
             }
             SetState(recovering ? ConnectionState.Recovering : ConnectionState.Connecting, recovering ? "Восстанавливаем соединение…" : "Подключаемся…");
             WriteSupervisorLog($"start-core recovering={recovering}", AppLogLevel.Info);
+            _lastStartAttempt = DateTimeOffset.Now;
             await Task.Yield();
             StopCore(); SystemProxy.Disable();
+            if (_settings.UseTun) await Task.Delay(800);
             var profile = _settings.Profiles.ElementAtOrDefault(_settings.SelectedProfile) ?? throw new InvalidOperationException("Добавьте подписку и выберите сервер");
             var corePath = Path.GetFullPath(Path.IsPathRooted(_settings.CorePath) ? _settings.CorePath : Path.Combine(AppContext.BaseDirectory, _settings.CorePath));
             if (!File.Exists(corePath)) throw new FileNotFoundException("Компонент подключения отсутствует. Переустановите Lampa VPN.", corePath);
             StopStaleCoreProcesses(corePath);
+            await Task.Delay(400);
+            EnsureLocalPorts();
             Directory.CreateDirectory(AppSettings.DataDirectory);
             var configPath = Path.Combine(AppSettings.DataDirectory, "config.json");
-            var fingerprint = ConfigFingerprint(profile);
-            var reuseConfig = fingerprint == _readyConfigFingerprint && File.Exists(configPath);
-            if (!reuseConfig)
+            await WriteCoreConfigAsync(profile, configPath);
+            ClearCoreErrors();
+            if (!string.IsNullOrWhiteSpace(_settings.LastProxyOutbound))
+                ActiveRouteName = _settings.LastProxyOutbound;
+            await LaunchCoreAsync(corePath, configPath);
+            if (!await IsPortOpenAsync() && IsLocalBindFailure())
             {
-                var routing = RoutingBundle.RefreshFromBundled(RoutingBundle.Resolve(_settings.ProfileRouting));
-                var configJson = await Task.Run(() => SingBoxConfigBuilder.Build(profile, _settings.LocalHttpPort,
-                    _settings.UseTun, routing, _settings.BypassApplications, _settings.ActivePriority,
-                    _settings.CustomProxyDomains, _settings.CustomDirectDomains, _settings.UseFullBlockList,
-                    _settings.RouteExceptRussia, _settings.GeoUpdateDays, _settings.WhitelistMode,
-                    _settings.LogLevel)).ConfigureAwait(false);
-                await File.WriteAllTextAsync(configPath, configJson).ConfigureAwait(false);
-                _readyConfigFingerprint = fingerprint;
+                WriteSupervisorLog($"start-failed bind {LastCoreError()}", AppLogLevel.Warn);
+                StopCore();
+                await Task.Delay(400);
+                EnsureLocalPorts(skipCurrent: true);
+                await WriteCoreConfigAsync(profile, configPath);
+                ClearCoreErrors();
+                await LaunchCoreAsync(corePath, configPath);
             }
-            var startInfo = new ProcessStartInfo(corePath, $"run -c \"{configPath}\"") {
-                UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(corePath)!,
-                RedirectStandardOutput = true, RedirectStandardError = true
-            };
-            _core = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-            _core.OutputDataReceived += OnCoreLog; _core.ErrorDataReceived += OnCoreLog;
-            _core.Start(); _core.BeginOutputReadLine(); _core.BeginErrorReadLine();
-            // TUN и системный интерфейс могут подниматься позже локального процесса.
-            // Даем более щедрое время, чтобы не уходить в перезапуск-цикл.
-            _coreStartedAt = DateTimeOffset.Now;
-            for (var i = 0; i < 60 && !await IsPortOpenAsync(); i++) { if (_core?.HasExited != false) break; await Task.Delay(250); }
-            if (!await IsPortOpenAsync()) throw new InvalidOperationException("VPN core не смог запуститься");
+            else if (!await IsPortOpenAsync())
+            {
+                WriteSupervisorLog($"start-failed {LastCoreError()}", AppLogLevel.Error);
+                StopCore();
+                if (_settings.UseTun) await Task.Delay(2000);
+                await LaunchCoreAsync(corePath, configPath);
+            }
+            if (!await IsPortOpenAsync())
+                throw new InvalidOperationException(StartFailureMessage());
             if (_settings.UseTun) SystemProxy.Disable(); else SystemProxy.Enable(_settings.LocalHttpPort);
             _connectedAt = DateTimeOffset.Now;
             _failedHealthChecks = 0;
+            _consecutiveStartFails = 0;
             _connections.Start();
             SetState(ConnectionState.Connected, recovering ? "TUN-соединение восстановлено" : "Весь трафик защищён через TUN");
+            _ = ProbeUrlTestAsync();
         }
-        catch (Exception ex) { StopCore(); SystemProxy.Disable(); SetState(ConnectionState.Error, ex.Message); }
+        catch (Exception ex)
+        {
+            _consecutiveStartFails++;
+            WriteSupervisorLog($"start-core failed: {ex.Message}", AppLogLevel.Error);
+            StopCore(); SystemProxy.Disable(); SetState(ConnectionState.Error, ex.Message);
+        }
         finally { _gate.Release(); }
+    }
+
+    private async Task WriteCoreConfigAsync(ProxyProfile profile, string configPath)
+    {
+        var fingerprint = ConfigFingerprint(profile);
+        var reuseConfig = fingerprint == _readyConfigFingerprint && File.Exists(configPath);
+        if (reuseConfig) return;
+        var routing = RoutingBundle.RefreshFromBundled(RoutingBundle.Resolve(_settings.ProfileRouting));
+        var configJson = await Task.Run(() => SingBoxConfigBuilder.Build(profile, _settings.LocalHttpPort,
+            _settings.UseTun, routing, _settings.BypassApplications, _settings.ActivePriority,
+            _settings.CustomProxyDomains, _settings.CustomDirectDomains, _settings.UseFullBlockList,
+            _settings.RouteExceptRussia, _settings.GeoUpdateDays, _settings.WhitelistMode,
+            _settings.LogLevel, _settings.LastProxyOutbound,
+            _settings.ClashApiPort)).ConfigureAwait(false);
+        await File.WriteAllTextAsync(configPath, configJson).ConfigureAwait(false);
+        _readyConfigFingerprint = fingerprint;
+    }
+
+    private void EnsureLocalPorts(bool skipCurrent = false)
+    {
+        var mixedPreferred = _settings.LocalHttpPort is > 1024 and < 65534 ? _settings.LocalHttpPort : 10809;
+        var clashPreferred = _settings.ClashApiPort is > 1024 and < 65534 ? _settings.ClashApiPort : 19090;
+        int[] skip = skipCurrent ? [mixedPreferred, clashPreferred] : [];
+        var mixed = LocalPortGuard.Pick(mixedPreferred, skip);
+        var clash = LocalPortGuard.Pick(clashPreferred, [.. skip, mixed]);
+        if (mixed == _settings.LocalHttpPort && clash == clashPreferred) return;
+        WriteSupervisorLog($"local-ports mixed={mixed} clash={clash} previous={_settings.LocalHttpPort}/{clashPreferred}", AppLogLevel.Warn);
+        _settings.LocalHttpPort = mixed;
+        _settings.ClashApiPort = clash;
+        _settings.Save();
+        _readyConfigFingerprint = "";
+    }
+
+    private bool IsLocalBindFailure()
+    {
+        var text = LastCoreError();
+        return text.Contains("forbidden by its access permissions", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("address already in use", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("Only one usage of each socket address", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("bind", StringComparison.OrdinalIgnoreCase) && text.Contains("listen", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task LaunchCoreAsync(string corePath, string configPath)
+    {
+        var startInfo = new ProcessStartInfo(corePath, $"run -c \"{configPath}\"") {
+            UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(corePath)!,
+            RedirectStandardOutput = true, RedirectStandardError = true
+        };
+        _core = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+        _core.OutputDataReceived += OnCoreLog; _core.ErrorDataReceived += OnCoreLog;
+        _core.Start(); _core.BeginOutputReadLine(); _core.BeginErrorReadLine();
+        _coreStartedAt = DateTimeOffset.Now;
+        for (var i = 0; i < 80 && !await IsPortOpenAsync(); i++)
+        {
+            if (_core?.HasExited != false) break;
+            await Task.Delay(250);
+        }
     }
 
     private void OnCoreLog(object sender, DataReceivedEventArgs e)
     {
         if (string.IsNullOrEmpty(e.Data)) return;
         LogStore.Instance.WriteCore(e.Data);
+        NoteCoreError(e.Data);
 
         var match = Regex.Match(e.Data, @"\[(?:auto-proxy-in|chain-in-s\d+)\s*->\s*route-p0*(\d+)", RegexOptions.IgnoreCase);
         if (!match.Success || !int.TryParse(match.Groups[1].Value, out var priority)) return;
@@ -135,10 +226,15 @@ public sealed class ConnectionSupervisor : IDisposable
     private async Task WatchdogAsync()
     {
         if (!_settings.DesiredConnected || !_settings.AutoReconnect || _suspended) return;
-        // Грейс-период после запуска core, чтобы watchdog не рестартил sing-box
-        // пока он ещё "прогревается" (инициализация tun/обмен с сетью).
-        if (_coreStartedAt > DateTimeOffset.MinValue &&
-            DateTimeOffset.Now - _coreStartedAt < TimeSpan.FromSeconds(15)) return;
+        if (State is ConnectionState.Connecting or ConnectionState.Recovering) return;
+        if (_gate.CurrentCount == 0) return;
+        if (_lastStartAttempt > DateTimeOffset.MinValue)
+        {
+            var wait = State == ConnectionState.Error
+                ? Math.Min(120, 20 * Math.Max(1, _consecutiveStartFails))
+                : 25;
+            if (DateTimeOffset.Now - _lastStartAttempt < TimeSpan.FromSeconds(wait)) return;
+        }
         if (_connectedAt > DateTimeOffset.MinValue && DateTimeOffset.Now - _connectedAt < TimeSpan.FromSeconds(45)) return;
         if (await RefreshActivePriorityAsync())
         {
@@ -151,7 +247,8 @@ public sealed class ConnectionSupervisor : IDisposable
         var tunnelDead = !processDead && !await IsTunnelHealthyAsync();
         _failedHealthChecks = tunnelDead ? _failedHealthChecks + 1 : 0;
         if (processDead || _failedHealthChecks >= 5) {
-            WriteSupervisorLog($"watchdog-restart reason={(processDead ? "process-or-port-dead" : "health-fail-x5")} failedHealth={_failedHealthChecks} pid={_core?.Id}", AppLogLevel.Error);
+            WriteSupervisorLog($"watchdog-restart reason={(processDead ? "process-or-port-dead" : "health-fail-x5")} failedHealth={_failedHealthChecks} pid={_core?.Id}",
+                State == ConnectionState.Error ? AppLogLevel.Warn : AppLogLevel.Error);
             _failedHealthChecks = 0;
             await DisconnectAsync(false); await EnsureConnectedAsync(true);
         }
@@ -177,14 +274,19 @@ public sealed class ConnectionSupervisor : IDisposable
                         _priorityConfirmations = 1;
                         return false;
                     }
-                    if (++_priorityConfirmations < 2 || priority == _settings.ActivePriority) return false;
+                    if (++_priorityConfirmations < 2 || priority == _settings.ActivePriority)
+                    {
+                        RememberOutbound(current);
+                        return false;
+                    }
                     _settings.ActivePriority = priority;
+                    RememberOutbound(current);
                     _settings.Save();
                     _readyConfigFingerprint = "";
                     return true;
                 }
 
-                var url = $"http://127.0.0.1:19090/proxies/{Uri.EscapeDataString(current)}";
+                var url = $"{ClashApiRoot}/proxies/{Uri.EscapeDataString(current)}";
                 var json = JsonNode.Parse(await client.GetStringAsync(url)) as JsonObject;
                 var next = json?["now"]?.GetValue<string>();
                 if (string.IsNullOrWhiteSpace(next) || string.Equals(next, current, StringComparison.Ordinal)) return false;
@@ -290,6 +392,69 @@ public sealed class ConnectionSupervisor : IDisposable
         } catch { return false; }
     }
 
+    private async Task ProbeUrlTestAsync()
+    {
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "lampa");
+            var url = "https://www.gstatic.com/generate_204";
+            using var delay = await client.GetAsync(
+                $"{ClashApiRoot}/proxies/proxy/delay?timeout=5000&url={Uri.EscapeDataString(url)}");
+            var json = JsonNode.Parse(await client.GetStringAsync($"{ClashApiRoot}/proxies/proxy")) as JsonObject;
+            RememberOutbound(json?["now"]?.GetValue<string>());
+        }
+        catch (Exception ex)
+        {
+            WriteSupervisorLog($"urltest-probe failed: {ex.Message}", AppLogLevel.Info);
+        }
+    }
+
+    private void RememberOutbound(string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag)) return;
+        if (tag is "proxy" or "direct" or "block") return;
+        ActiveRouteName = tag;
+        if (string.Equals(_settings.LastProxyOutbound, tag, StringComparison.OrdinalIgnoreCase)) return;
+        _settings.LastProxyOutbound = tag;
+        _settings.Save();
+        WriteSupervisorLog($"remember-node {tag}", AppLogLevel.Info);
+    }
+
+    private void NoteCoreError(string line)
+    {
+        if (line.IndexOf("ERROR", StringComparison.OrdinalIgnoreCase) < 0 &&
+            line.IndexOf("FATAL", StringComparison.OrdinalIgnoreCase) < 0 &&
+            line.IndexOf("panic", StringComparison.OrdinalIgnoreCase) < 0)
+            return;
+        lock (_recentCoreErrors)
+        {
+            _recentCoreErrors.Add(line);
+            if (_recentCoreErrors.Count > 16) _recentCoreErrors.RemoveAt(0);
+        }
+    }
+
+    private void ClearCoreErrors()
+    {
+        lock (_recentCoreErrors) _recentCoreErrors.Clear();
+    }
+
+    private string LastCoreError()
+    {
+        lock (_recentCoreErrors) return _recentCoreErrors.Count == 0 ? "" : _recentCoreErrors[^1];
+    }
+
+    private string StartFailureMessage()
+    {
+        var detail = LastCoreError();
+        if (string.IsNullOrWhiteSpace(detail)) return "VPN core не смог запуститься";
+        var cut = detail.IndexOf("ERROR", StringComparison.OrdinalIgnoreCase);
+        if (cut >= 0) detail = detail[cut..];
+        if (detail.Length > 180) detail = detail[..180];
+        return $"VPN core не смог запуститься: {detail.Trim()}";
+    }
+
     private string ConfigFingerprint(ProxyProfile profile) =>
         string.Join('|',
             _settings.SelectedProfile,
@@ -303,6 +468,7 @@ public sealed class ConnectionSupervisor : IDisposable
             _settings.WhitelistMode,
             _settings.GeoUpdateDays,
             _settings.LogLevel,
+            _settings.ClashApiPort,
             string.Join(',', _settings.BypassApplications),
             string.Join(',', _settings.CustomProxyDomains),
             string.Join(',', _settings.CustomDirectDomains));

@@ -8,7 +8,7 @@ New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
     $singBox = Join-Path $core "sing-box.exe"
     if (-not (Test-Path $singBox)) {
-        throw "Custom sing-box-lx.29 is missing: $singBox. Restore it from the project sources before packaging."
+        throw "Custom sing-box-lx is missing: $singBox. Restore it from the project sources before packaging."
     }
 
     $wintun = Join-Path $tmp "wintun.zip"

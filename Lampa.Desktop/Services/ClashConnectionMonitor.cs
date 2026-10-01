@@ -35,8 +35,8 @@ public sealed class ClashConnectionsSnapshot
 /// </summary>
 public sealed class ClashConnectionMonitor : IDisposable
 {
-    private const string ApiRoot = "http://127.0.0.1:19090";
     private readonly AppSettings _settings;
+    private string ApiRoot => $"http://127.0.0.1:{(_settings.ClashApiPort is > 1024 and < 65534 ? _settings.ClashApiPort : 19090)}";
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromMilliseconds(800) };
     private readonly Dictionary<string, (long Up, long Down, long Stamp)> _speeds = [];
     private readonly Dictionary<string, long> _loggedAccess = new(StringComparer.Ordinal);
