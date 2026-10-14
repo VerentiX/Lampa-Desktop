@@ -742,7 +742,7 @@
       </StackPanel>
     </ScrollViewer>
       <TextBlock x:Name="AppVersionText"
-                 Text="1.0.15"
+                 Text="1.0.18"
                  Foreground="#668EB5D2"
                  FontSize="12"
                  HorizontalAlignment="Right"

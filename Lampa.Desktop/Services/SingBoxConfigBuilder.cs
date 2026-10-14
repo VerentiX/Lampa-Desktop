@@ -29,7 +29,7 @@ public static class SingBoxConfigBuilder
         var root = new JsonObject
         {
             ["log"] = new JsonObject { ["level"] = LogStore.ToSingBoxLevel(logLevel), ["timestamp"] = true },
-            ["dns"] = BuildDns(useFullBlockList, effectivePriority, customProxyDomains ?? []),
+            ["dns"] = BuildDns(useFullBlockList, effectivePriority, routeExceptRussia, customProxyDomains ?? []),
             ["inbounds"] = BuildInbounds(httpPort, useTun),
             ["outbounds"] = outbounds,
             ["http_clients"] = new JsonArray
@@ -223,10 +223,12 @@ public static class SingBoxConfigBuilder
         outbounds.Add(new JsonObject { ["type"] = type, ["tag"] = tag });
     }
 
-    private static JsonObject BuildDns(bool useFullBlockList, int activePriority,
+    private static JsonObject BuildDns(bool useFullBlockList, int activePriority, bool routeExceptRussia,
         IReadOnlyCollection<string> customProxyDomains)
     {
-        var selectiveFullRouting = useFullBlockList && activePriority < 5;
+        var p5 = activePriority >= 5;
+        var splitRussia = !p5 && (useFullBlockList || routeExceptRussia);
+        var selectiveFullRouting = splitRussia;
         var servers = new JsonArray
         {
             // Bootstrap and remote rule-set hostnames must use the Windows
@@ -251,7 +253,7 @@ public static class SingBoxConfigBuilder
         var dns = new JsonObject
         {
             ["servers"] = servers,
-            ["final"] = selectiveFullRouting ? "dns-direct" : "dns-tunnel",
+            ["final"] = "dns-tunnel",
         // The Windows TUN adapter must not advertise IPv6 unless the selected
         // outbound can actually carry it. Chromium otherwise prefers AAAA,
         // completes the synthetic TUN connect and then loses the TLS handshake
@@ -268,7 +270,11 @@ public static class SingBoxConfigBuilder
                     ["domain_suffix"] = new JsonArray(custom.Select(x => (JsonNode?)x).ToArray()),
                     ["server"] = "dns-tunnel"
                 });
-            dnsRules.Add(new JsonObject { ["rule_set"] = FullProxyDomainRuleSets(), ["server"] = "dns-tunnel" });
+            dnsRules.Add(new JsonObject
+            {
+                ["rule_set"] = new JsonArray("roscom-category-ru", "roscom-whitelist"),
+                ["server"] = "dns-direct"
+            });
             dns["rules"] = dnsRules;
         }
         return dns;
@@ -322,47 +328,48 @@ public static class SingBoxConfigBuilder
             });
 
         var ruleSets = new JsonArray();
+        // Direct CDN, not through the proxy. A proxy detour cannot run until a
+        // node is chosen, so the old GitHub downloads held the whole start.
+        // Only sets this mode actually matches are registered: sing-box loads
+        // every declared remote set before it listens.
         AddRemoteRuleSet(ruleSets, "ads-all",
-            "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ads-all.srs",
-            ruleSetUpdateDays, true);
-        AddRemoteRuleSet(ruleSets, "roscom-whitelist", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/whitelist.srs", ruleSetUpdateDays);
-        AddRemoteRuleSet(ruleSets, "roscom-category-ru", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/category-ru.srs", ruleSetUpdateDays);
-        AddRemoteRuleSet(ruleSets, "roscom-private", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/private.srs", ruleSetUpdateDays);
-        AddRemoteRuleSet(ruleSets, "roscom-ip-direct", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geoip@release/sing-box/direct.srs", ruleSetUpdateDays);
-        AddInlineRuleSet(ruleSets, "lampa-sber", ["sber.ru", "sberbank.ru", "sberbank.com", "sbrf.ru", "sbercloud.ru", "sberdevices.ru", "sbermobile.ru", "sberspasibo.ru"]);
-        AddInlineRuleSet(ruleSets, "lampa-tbank", ["tbank.ru", "tinkoff.ru", "tinkoff.com", "tcsbank.ru", "tinkoffjournal.ru", "tinkoffmobile.com", "t-j.ru", "t-static.ru", "t-tech.ru"]);
+            $"{RunetFreedomSrs}/rule-set-geosite/geosite-category-ads-all.srs",
+            ruleSetUpdateDays);
 
         // First pass keeps AsIs-like behaviour: domain and already-known IP
         // rules can match without forcing a DNS lookup.
         var profileRuleStart = rules.Count;
+        rules.Add(new JsonObject { ["ip_is_private"] = true, ["outbound"] = "direct" });
         if (p5)
         {
+            AddInlineRuleSet(ruleSets, "lampa-sber", ["sber.ru", "sberbank.ru", "sberbank.com", "sbrf.ru", "sbercloud.ru", "sberdevices.ru", "sbermobile.ru", "sberspasibo.ru"]);
+            AddInlineRuleSet(ruleSets, "lampa-tbank", ["tbank.ru", "tinkoff.ru", "tinkoff.com", "tcsbank.ru", "tinkoffjournal.ru", "tinkoffmobile.com", "t-j.ru", "t-static.ru", "t-tech.ru"]);
+            AddRemoteRuleSet(ruleSets, "roscom-whitelist", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/whitelist.srs", ruleSetUpdateDays);
             rules.Add(new JsonObject { ["rule_set"] = new JsonArray("lampa-sber", "lampa-tbank"), ["outbound"] = ProxyTag });
             rules.Add(new JsonObject { ["rule_set"] = "roscom-whitelist", ["outbound"] = "direct" });
         }
-        else if (selectiveFullRouting)
+        else if (selectiveFullRouting || routeExceptRussia)
         {
-            AddRemoteRuleSet(ruleSets, "refilter-domains", "https://github.com/1andrevich/Re-filter-lists/releases/latest/download/ruleset-domain-refilter_domains.srs", ruleSetUpdateDays, true);
-            AddRemoteRuleSet(ruleSets, "refilter-ips", "https://github.com/1andrevich/Re-filter-lists/releases/latest/download/ruleset-ip-refilter_ipsum.srs", ruleSetUpdateDays, true);
-            AddRemoteRuleSet(ruleSets, "roscom-geoblock-ru", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/category-geoblock-ru.srs", ruleSetUpdateDays, true);
-            AddRemoteRuleSet(ruleSets, "roscom-youtube", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/youtube.srs", ruleSetUpdateDays, true);
-            AddRemoteRuleSet(ruleSets, "roscom-telegram", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/telegram.srs", ruleSetUpdateDays, true);
-            AddRemoteRuleSet(ruleSets, "roscom-github", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/github.srs", ruleSetUpdateDays, true);
-            AddRemoteRuleSet(ruleSets, "roscom-google-play", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/google-play.srs", ruleSetUpdateDays, true);
-            rules.Add(new JsonObject { ["rule_set"] = "roscom-private", ["outbound"] = "direct" });
+            // Russian sites go direct. A foreign name goes to the proxy even
+            // when its CDN address is inside Russia (YouTube serves video from
+            // Google caches whose IPs are in the Russian geoip list). Raw IPs
+            // with no sniffed name still use that geoip list.
+            AddRussiaDirectSets(ruleSets, ruleSetUpdateDays);
+            rules.Add(RussiaDomainDirectRule());
             rules.Add(new JsonObject
             {
-                ["rule_set"] = new JsonArray("refilter-domains", "refilter-ips", "roscom-geoblock-ru",
-                    "roscom-youtube", "roscom-telegram", "roscom-github", "roscom-google-play"),
+                ["domain_regex"] = new JsonArray("^.+$"),
                 ["outbound"] = ProxyTag
             });
+            rules.Add(RussiaIpDirectRule());
         }
         else
         {
+            AddRunetBlockedSets(ruleSets, ruleSetUpdateDays);
             rules.Add(new JsonObject
             {
-                ["rule_set"] = new JsonArray("roscom-private", "roscom-category-ru", "roscom-whitelist", "roscom-ip-direct"),
-                ["outbound"] = "direct"
+                ["rule_set"] = new JsonArray("ru-blocked", "ru-blocked-ip"),
+                ["outbound"] = ProxyTag
             });
         }
 
@@ -381,7 +388,7 @@ public static class SingBoxConfigBuilder
         return new JsonObject
         {
             ["rules"] = rules, ["rule_set"] = ruleSets,
-            ["final"] = p5 || (!selectiveFullRouting && routeExceptRussia) ? ProxyTag : "direct",
+            ["final"] = p5 || selectiveFullRouting || routeExceptRussia ? ProxyTag : "direct",
             ["auto_detect_interface"] = true, ["default_domain_resolver"] = "dns-bootstrap",
             ["default_http_client"] = "rules-direct"
         };
@@ -431,8 +438,35 @@ public static class SingBoxConfigBuilder
         return true;
     }
 
-    private static JsonArray FullProxyDomainRuleSets() => new(
-        "refilter-domains", "roscom-geoblock-ru", "roscom-youtube", "roscom-telegram", "roscom-github", "roscom-google-play");
+    private const string RunetFreedomSrs =
+        "https://cdn.jsdelivr.net/gh/runetfreedom/russia-v2ray-rules-dat@release/sing-box";
+
+    private static void AddRunetBlockedSets(JsonArray target, int updateDays)
+    {
+        AddRemoteRuleSet(target, "ru-blocked",
+            $"{RunetFreedomSrs}/rule-set-geosite/geosite-ru-blocked.srs", updateDays);
+        AddRemoteRuleSet(target, "ru-blocked-ip",
+            $"{RunetFreedomSrs}/rule-set-geoip/geoip-ru-blocked.srs", updateDays);
+    }
+
+    private static void AddRussiaDirectSets(JsonArray target, int updateDays)
+    {
+        AddRemoteRuleSet(target, "roscom-whitelist", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/whitelist.srs", updateDays);
+        AddRemoteRuleSet(target, "roscom-category-ru", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geosite@release/sing-box/category-ru.srs", updateDays);
+        AddRemoteRuleSet(target, "roscom-ip-direct", "https://cdn.jsdelivr.net/gh/hydraponique/roscomvpn-geoip@release/sing-box/direct.srs", updateDays);
+    }
+
+    private static JsonObject RussiaDomainDirectRule() => new()
+    {
+        ["rule_set"] = new JsonArray("roscom-category-ru", "roscom-whitelist"),
+        ["outbound"] = "direct"
+    };
+
+    private static JsonObject RussiaIpDirectRule() => new()
+    {
+        ["rule_set"] = "roscom-ip-direct",
+        ["outbound"] = "direct"
+    };
 
     private static void AddRemoteRuleSet(JsonArray target, string tag, string url, int updateDays, bool throughProxy = false) => target.Add(new JsonObject
     {

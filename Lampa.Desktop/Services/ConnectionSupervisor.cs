@@ -105,12 +105,12 @@ public sealed class ConnectionSupervisor : IDisposable
             _lastStartAttempt = DateTimeOffset.Now;
             await Task.Yield();
             StopCore(); SystemProxy.Disable();
-            if (_settings.UseTun) await Task.Delay(800);
+            if (_settings.UseTun) await Task.Delay(250);
             var profile = _settings.Profiles.ElementAtOrDefault(_settings.SelectedProfile) ?? throw new InvalidOperationException("Добавьте подписку и выберите сервер");
             var corePath = Path.GetFullPath(Path.IsPathRooted(_settings.CorePath) ? _settings.CorePath : Path.Combine(AppContext.BaseDirectory, _settings.CorePath));
             if (!File.Exists(corePath)) throw new FileNotFoundException("Компонент подключения отсутствует. Переустановите Lampa VPN.", corePath);
             StopStaleCoreProcesses(corePath);
-            await Task.Delay(400);
+            await Task.Delay(150);
             EnsureLocalPorts();
             Directory.CreateDirectory(AppSettings.DataDirectory);
             var configPath = Path.Combine(AppSettings.DataDirectory, "config.json");
@@ -133,7 +133,7 @@ public sealed class ConnectionSupervisor : IDisposable
             {
                 WriteSupervisorLog($"start-failed {LastCoreError()}", AppLogLevel.Error);
                 StopCore();
-                if (_settings.UseTun) await Task.Delay(2000);
+                if (_settings.UseTun) await Task.Delay(500);
                 await LaunchCoreAsync(corePath, configPath);
             }
             if (!await IsPortOpenAsync())
@@ -396,12 +396,12 @@ public sealed class ConnectionSupervisor : IDisposable
     {
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            // Do not call /delay here. That endpoint waits until every node is
+            // measured. The core already dials the remembered node at once and
+            // keeps testing the rest in the background.
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
             client.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "lampa");
-            var url = "https://www.gstatic.com/generate_204";
-            using var delay = await client.GetAsync(
-                $"{ClashApiRoot}/proxies/proxy/delay?timeout=5000&url={Uri.EscapeDataString(url)}");
             var json = JsonNode.Parse(await client.GetStringAsync($"{ClashApiRoot}/proxies/proxy")) as JsonObject;
             RememberOutbound(json?["now"]?.GetValue<string>());
         }

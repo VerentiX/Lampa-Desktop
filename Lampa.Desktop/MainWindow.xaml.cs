@@ -729,7 +729,7 @@ public partial class MainWindow : Window
         BlockedOnlyRouteBtn.IsEnabled = !_settings.UseFullBlockList;
         if (_settings.UseFullBlockList)
         {
-            RoutePolicyHint.Text = "P0–P4: блокировки и геоограничения через VPN, остальное напрямую. P5+: режим белых списков.";
+            RoutePolicyHint.Text = "Всё кроме России через VPN. Российские сайты — напрямую. Иностранное имя, включая YouTube, идёт через VPN, даже если адрес сервера российский. P5+: режим белых списков.";
             return;
         }
         ExceptRuRouteBtn.Tag = _settings.RouteExceptRussia ? "active" : null;

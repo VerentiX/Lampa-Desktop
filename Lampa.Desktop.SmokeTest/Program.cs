@@ -34,14 +34,24 @@ foreach (var profile in result.Profiles)
         if (fullP0["log"]?["level"]?.GetValue<string>() != "warn" ||
             fullP0["log"]?["timestamp"]?.GetValue<bool>() != true)
             throw new Exception("Desktop config must default to warn-level logs");
-        if (fullP0["route"]?["final"]?.GetValue<string>() != "direct" ||
-            fullP0["dns"]?["final"]?.GetValue<string>() != "dns-direct" ||
-            !fullRules.Any(x => x?["rule_set"]?.ToJsonString().Contains("refilter-domains") == true))
+        if (fullP0["route"]?["final"]?.GetValue<string>() != "proxy" ||
+            fullP0["dns"]?["final"]?.GetValue<string>() != "dns-tunnel" ||
+            !fullRules.Any(x => x?["rule_set"]?.ToJsonString().Contains("roscom-category-ru") == true &&
+                                x?["rule_set"]?.ToJsonString().Contains("roscom-ip-direct") != true &&
+                                x?["outbound"]?.GetValue<string>() == "direct"))
             throw new InvalidOperationException("Full P0 routing was not applied.");
+        var foreignNameIndex = fullRules.Select((rule, index) => (rule, index))
+            .FirstOrDefault(x => x.rule?["domain_regex"]?.ToJsonString().Contains("^.+") == true &&
+                                 x.rule?["outbound"]?.GetValue<string>() == "proxy").index;
+        var russianIpIndex = fullRules.Select((rule, index) => (rule, index))
+            .FirstOrDefault(x => x.rule?["rule_set"]?.ToJsonString().Contains("roscom-ip-direct") == true &&
+                                 x.rule?["outbound"]?.GetValue<string>() == "direct").index;
+        if (foreignNameIndex <= 0 || russianIpIndex <= foreignNameIndex)
+            throw new InvalidOperationException("Foreign names must reach the proxy before the Russian IP list.");
         var resolveIndex = fullRules.Select((rule, index) => (rule, index))
             .FirstOrDefault(x => x.rule?["action"]?.GetValue<string>() == "resolve").index;
         if (resolveIndex <= 0 || !fullRules.Skip(resolveIndex + 1)
-                .Any(x => x?["rule_set"]?.ToJsonString().Contains("refilter-ips") == true))
+                .Any(x => x?["rule_set"]?.ToJsonString().Contains("roscom-ip-direct") == true))
             throw new InvalidOperationException("IPIfNonMatch retry pass was not generated.");
 
         var custom = JsonNode.Parse(SingBoxConfigBuilder.Build(profile, 10809, true, result.Metadata.ProfileRouting,
@@ -59,7 +69,7 @@ foreach (var profile in result.Profiles)
             [], 0, useFullBlockList: false, routeExceptRussia: true))!.AsObject();
         if (fastP0["route"]?["final"]?.GetValue<string>() != "proxy" ||
             fastP0["dns"]?["final"]?.GetValue<string>() != "dns-tunnel" ||
-            fastP0["route"]!["rules"]!.AsArray().Any(x => x?["rule_set"]?.ToJsonString().Contains("refilter-domains") == true))
+            fastP0["route"]!["rules"]!.AsArray().Any(x => x?["rule_set"]?.ToJsonString().Contains("ru-blocked") == true))
             throw new InvalidOperationException("Fast P0 routing changed unexpectedly.");
 
         var p5 = JsonNode.Parse(SingBoxConfigBuilder.Build(profile, 10809, true, result.Metadata.ProfileRouting,
@@ -75,7 +85,8 @@ foreach (var profile in result.Profiles)
                 @"(?:^|[^a-z0-9])p0*(?:[5-9]|\d{2,})(?=[^0-9]|$)",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase)))
             throw new InvalidOperationException("Whitelist mode off still contains P5+ outbounds.");
-        if (p0Only["route"]?["final"]?.GetValue<string>() != "direct")
+        if (p0Only["route"]?["final"]?.GetValue<string>() != "proxy" ||
+            p0Only["route"]!["rules"]!.AsArray().Any(x => x?["rule_set"]?.ToJsonString().Contains("lampa-sber") == true))
             throw new InvalidOperationException("Whitelist mode off retained P5 routing policy.");
 
         foreach (var (name, config) in new[] { ("full-p0", fullP0), ("fast-p0", fastP0), ("p5", p5) })
